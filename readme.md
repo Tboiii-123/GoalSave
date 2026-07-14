@@ -152,9 +152,21 @@ Mark Deposit Successful
 | GET  | `/api/admin/ledger/`            | Get all ledger entry |
 
 | GET    | `admin/ledger/user/<int:user_id>/` | Get all ledger by user              |
-| GET   | `admin/ledger/<int:pk>`            | Get ledger by single detail       |
+| GET   | `admin/ledger/<int:pk>/`            | Get ledger by single detail       |
 
 ---
+
+## Analytics
+
+| Method | Endpoint                            | Description                 |
+| ------ | ----------------------------------- | --------------------------- |
+| GET  | `/api/analytics/goal/summary/`            | Get all ledger entry |
+
+| GET    | `/api/analytics/goals/?period=2m` | Get all goals savings by preiod  eg period=2 month               |
+| GET   | `api/analytics/goals/top/`            | Get the top goal savings     |
+
+---
+
 
 # Example Create Goal Request
 
