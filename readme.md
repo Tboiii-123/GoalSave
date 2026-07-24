@@ -149,10 +149,9 @@ Mark Deposit Successful
 
 | Method | Endpoint                            | Description                 |
 | ------ | ----------------------------------- | --------------------------- |
-| GET  | `/api/admin/ledger/`            | Get all ledger entry |
-
-| GET    | `admin/ledger/user/<int:user_id>/` | Get all ledger by user              |
-| GET   | `admin/ledger/<int:pk>/`            | Get ledger by single detail       |
+| GET    | `/api/admin/ledger/`                  | Get all ledger entry |
+| GET    | `admin/ledger/user/<int:user_id>/`  | Get all ledger by user        |
+| GET    | `admin/ledger/<int:pk>/`             | Get ledger by single detail       |
 
 ---
 
@@ -160,10 +159,9 @@ Mark Deposit Successful
 
 | Method | Endpoint                            | Description                 |
 | ------ | ----------------------------------- | --------------------------- |
-| GET  | `/api/analytics/goal/summary/`            | Get all ledger entry |
-
-| GET    | `/api/analytics/goals/?period=2m` | Get all goals savings by preiod  eg period=2 month               |
-| GET   | `api/analytics/goals/top/`            | Get the top goal savings     |
+| GET    | `/api/analytics/goal/summary/`      | Get all ledger entry |
+| GET    | `/api/analytics/goals/?period=2m`   | Get all goals savings by preiod  eg period=2 month  |
+| GET    | `api/analytics/goals/top/`          | Get the top goal savings     |
 
 ---
 

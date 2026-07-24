@@ -53,7 +53,8 @@ INSTALLED_APPS = [
     'apps.notifications',
     'apps.payments',
     'apps.wallet',
-    'apps.ledger'
+    'apps.ledger',
+    'apps.admin_panel'
     
     
 ]

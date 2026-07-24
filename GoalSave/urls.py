@@ -28,6 +28,7 @@ urlpatterns = [
     path("api/payments/", include("apps.payments.urls")),
     path("api/", include("apps.ledger.urls")),
     path("api/analytics/", include("apps.analytics.urls")),
+    path("api/analytics/", include("apps.withdrawal.urls")),
     
     
 
