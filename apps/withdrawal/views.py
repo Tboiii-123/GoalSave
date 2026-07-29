@@ -104,7 +104,7 @@ def request_withdrawal(request):
 
 
 
-    #Users withdrwal History
+ #Users withdrwal History
 
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
@@ -123,107 +123,3 @@ def list_withdrawals(request):
 
     return Response(serializer.data)
 
-
-
-#Admin - Get Pending Withdrawals
-@api_view(["GET"])
-@permission_classes([IsAdminUser])
-def list_pending_withdrawals(request):
-
-    withdrawals = GoalWithdrawal.objects.filter(
-        status=WithdrawalStatus.PENDING
-    ).select_related(
-        "user",
-        "goal"
-    ).order_by("-requested_at")
-
-    serializer = GoalWithdrawalSerializer(
-        withdrawals,
-        many=True
-    )
-
-    return Response(serializer.data)
-
-
-
-
-@api_view(["PATCH"])
-@permission_classes([IsAdminUser])
-def approve_withdrawal(request, pk):
-
-    with transaction.atomic():
-
-        # Lock withdrawal row
-        withdrawal = get_object_or_404(
-            GoalWithdrawal.objects.select_for_update(),
-            pk=pk
-        )
-
-        # Already processed?
-        if withdrawal.status != WithdrawalStatus.PENDING:
-            return Response(
-                {
-                    "detail": "Withdrawal has already been processed."
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        # Lock goal row
-        goal = SavingsGoal.objects.select_for_update().get(
-            id=withdrawal.goal.id
-        )
-
-        # Lock wallet row (needed for ledger)
-        wallet = Wallet.objects.select_for_update().get(
-            user=withdrawal.user
-        )
-
-        # Safety check
-        if withdrawal.amount > goal.saved_amount:
-            return Response(
-                {
-                    "detail": "Insufficient goal balance."
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        balance_before = goal.saved_amount
-
-        # Debit goal
-        goal.saved_amount -= withdrawal.amount
-        goal.save(
-            update_fields=["saved_amount"]
-        )
-
-        balance_after = goal.saved_amount
-
-        # Create ledger entry
-        LedgerEntry.objects.create(
-            wallet=wallet,
-            transaction_reference=withdrawal.reference,
-            transaction_type=LedgerTransactionType.WITHDRAWAL,
-            entry_type=LedgerEntryType.DEBIT,
-            amount=withdrawal.amount,
-            balance_before=balance_before,
-            balance_after=balance_after,
-            description="Withdrawal approved and paid to customer's bank account."
-        )
-
-        # Mark withdrawal as successful
-        withdrawal.status = WithdrawalStatus.SUCCESS
-        withdrawal.processed_at = timezone.now()
-        withdrawal.save(
-            update_fields=[
-                "status",
-                "processed_at"
-            ]
-        )
-
-    return Response(
-        {
-            "detail": "Withdrawal approved successfully.",
-            "reference": withdrawal.reference,
-            "status": withdrawal.status
-        },
-        status=status.HTTP_200_OK
-    )

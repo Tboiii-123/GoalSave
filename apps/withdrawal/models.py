@@ -13,32 +13,15 @@ class WithdrawalStatus(models.TextChoices):
 
 
 class GoalWithdrawal(models.Model):
-    user = models.ForeignKey(
-        User,
-        on_delete=models.CASCADE,
-        related_name="withdrawals"
-    )
+    user = models.ForeignKey(User,  on_delete=models.CASCADE,  related_name="withdrawals" )
 
-    goal = models.ForeignKey(
-        SavingsGoal,
-        on_delete=models.CASCADE,
-        related_name="withdrawals"
-    )
+    goal = models.ForeignKey(SavingsGoal,on_delete=models.CASCADE, related_name="withdrawals" )
 
-    reference = models.CharField(
-        max_length=100,
-        unique=True,
-        db_index=True
-    )
+    reference = models.CharField(max_length=100, unique=True)
 
-    amount = models.DecimalField(
-        max_digits=12,
-        decimal_places=2
-    )
+    amount = models.DecimalField(max_digits=12,decimal_places=2)
 
-    status = models.CharField(
-        max_length=20,
-        choices=WithdrawalStatus.choices,
+    status = models.CharField(max_length=20,choices=WithdrawalStatus.choices,
         default=WithdrawalStatus.PENDING
     )
 

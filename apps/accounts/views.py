@@ -36,36 +36,12 @@ def register_view(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 # @throttle_classes([UserThrottle])
-
 def get_users(request):
     users = User.objects.select_related("profile").all()
     serializer = UserSerializer(users, many=True)
     return Response(serializer.data)
 
 
-
-@api_view(["GET", "PATCH"])
-@permission_classes([IsAuthenticated])
-# @throttle_classes([UserThrottle])
-
-def my_profile(request):
-
-    if request.method == "GET":
-        serializer = UserSerializer(request.user)
-        return Response(serializer.data)
-
-    if request.method == "PATCH":
-        serializer = UserSerializer(
-            request.user,
-            data=request.data,
-            partial=True
-        )
-
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 @api_view(["GET", "PATCH"])
@@ -98,6 +74,9 @@ def my_profile(request):
         },
         status=status.HTTP_200_OK
     )
+
+
+
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def logout_view(request):

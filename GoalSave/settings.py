@@ -54,7 +54,9 @@ INSTALLED_APPS = [
     'apps.payments',
     'apps.wallet',
     'apps.ledger',
-    'apps.admin_panel'
+    'apps.admin_panel',
+    'apps.withdrawal',
+    
     
     
 ]
