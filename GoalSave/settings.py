@@ -56,7 +56,8 @@ INSTALLED_APPS = [
     'apps.ledger',
     'apps.admin_panel',
     'apps.withdrawal',
-    
+    #Doc
+    "drf_spectacular",
     
     
 ]
@@ -151,6 +152,8 @@ AUTH_USER_MODEL = 'accounts.User'
 
 
 REST_FRAMEWORK = {
+
+ "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
@@ -183,3 +186,12 @@ SIMPLE_JWT = {
 
 PAYSTACK_SECRET_KEY =config('PAYSTACK_SECRET_KEY')
 PAYSTACK_PUBLIC_KEY = config('PAYSTACK_PUBLIC_KEY')
+
+
+#Swaggger_doc
+SPECTACULAR_SETTINGS = {
+    "TITLE": "GoalSave API",
+    "DESCRIPTION": "Goal-based savings platform API.",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+}

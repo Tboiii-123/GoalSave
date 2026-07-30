@@ -11,11 +11,36 @@ from apps.wallet.models import Wallet, WalletTransaction
 from apps.ledger.models import (LedgerEntry,LedgerEntryType,LedgerTransactionType)
 from .models import (SavingsGoal,GoalStatus,GoalFunding)
 from apps.payments.services import generate_reference   
-
-
 from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import (
+    extend_schema,
+    OpenApiResponse,
+    OpenApiParameter,
+    OpenApiExample,
+)
 
 
+@extend_schema(
+    tags=["Goals"],
+    summary="Create a savings goal",
+    description="Creates a new savings goal for the authenticated user.",
+    request=SavingsGoalSerializer,
+    responses={
+        201: SavingsGoalSerializer,
+        400: OpenApiResponse(description="Validation error"),
+    },
+    examples=[
+        OpenApiExample(
+            "Create Goal",
+            request_only=True,
+            value={
+                "title": "Buy Laptop",
+                "target_amount": 500000,
+                "target_date": "2026-12-31",
+            },
+        ),
+    ],
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def create_goal(request):
@@ -29,6 +54,12 @@ def create_goal(request):
 
 
 
+@extend_schema(
+    tags=["Goals"],
+    summary="List savings goals",
+    description="Returns all savings goals belonging to the authenticated user.",
+    responses={200: SavingsGoalSerializer(many=True)},
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def list_goals(request):
@@ -39,6 +70,26 @@ def list_goals(request):
 
     return Response(serializer.data)
 
+
+
+@extend_schema(
+    tags=["Goals"],
+    summary="Retrieve a savings goal",
+    description="Returns the details of a specific savings goal owned by the authenticated user.",
+    parameters=[
+        OpenApiParameter(
+            name="pk",
+            type=str,
+            location=OpenApiParameter.PATH,
+            description="Savings Goal UUID",
+        )
+    ],
+    responses={
+        200: SavingsGoalSerializer,
+        404: OpenApiResponse(description="Goal not found"),
+        403: OpenApiResponse(description="Access denied"),
+    },
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def retrieve_goal(request, pk):
@@ -66,7 +117,27 @@ def retrieve_goal(request, pk):
 
 
 
-
+@extend_schema(
+    tags=["Goals"],
+    summary="Delete a savings goal",
+    description=(
+        "Deletes a savings goal. "
+        "A goal cannot be deleted if it contains saved funds."
+    ),
+    parameters=[
+        OpenApiParameter(
+            name="pk",
+            type=str,
+            location=OpenApiParameter.PATH,
+            description="Savings Goal UUID",
+        )
+    ],
+    responses={
+        200: OpenApiResponse(description="Goal deleted successfully"),
+        400: OpenApiResponse(description="Goal contains saved funds"),
+        404: OpenApiResponse(description="Goal not found"),
+    },
+)
 @api_view(["DELETE"])
 @permission_classes([IsAuthenticated])
 def delete_goal(request, pk):
@@ -104,6 +175,23 @@ def delete_goal(request, pk):
     )
 
 
+@extend_schema(
+    tags=["Goals"],
+    summary="Pause a savings goal",
+    description="Changes the status of a savings goal to PAUSED.",
+    parameters=[
+        OpenApiParameter(
+            name="pk",
+            type=str,
+            location=OpenApiParameter.PATH,
+            description="Savings Goal UUID",
+        )
+    ],
+    responses={
+        200: OpenApiResponse(description="Goal paused successfully"),
+        404: OpenApiResponse(description="Goal not found"),
+    },
+)
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated])
 def pause_goal(request, pk):
@@ -130,7 +218,23 @@ def pause_goal(request, pk):
     return Response({"detail": "Goal paused successfully."})
 
 
-
+@extend_schema(
+    tags=["Goals"],
+    summary="Resume a savings goal",
+    description="Changes the status of a paused savings goal back to ACTIVE.",
+    parameters=[
+        OpenApiParameter(
+            name="pk",
+            type=str,
+            location=OpenApiParameter.PATH,
+            description="Savings Goal UUID",
+        ),
+    ],
+    responses={
+        200: OpenApiResponse(description="Goal resumed successfully"),
+        404: OpenApiResponse(description="Goal not found"),
+    },
+)
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated])
 def resume_goal(request, pk):
@@ -155,7 +259,23 @@ def resume_goal(request, pk):
 
     return Response({"detail": "Goal resumed successfully."})
 
-
+@extend_schema(
+    tags=["Goals"],
+    summary="Complete a savings goal",
+    description="Marks a savings goal as completed.",
+    parameters=[
+        OpenApiParameter(
+            name="pk",
+            type=str,
+            location=OpenApiParameter.PATH,
+            description="Savings Goal UUID",
+        ),
+    ],
+    responses={
+        200: OpenApiResponse(description="Goal marked as completed"),
+        404: OpenApiResponse(description="Goal not found"),
+    },
+)
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated])
 def complete_goal(request, pk):
@@ -181,7 +301,42 @@ def complete_goal(request, pk):
     return Response({"detail": "Goal marked as completed."})
 
 
-
+@extend_schema(
+    tags=["Goals"],
+    summary="Fund a savings goal",
+    description=(
+        "Transfers money from the authenticated user's wallet "
+        "into one of their savings goals."
+    ),
+    parameters=[
+        OpenApiParameter(
+            name="pk",
+            type=str,
+            location=OpenApiParameter.PATH,
+            description="Savings Goal UUID",
+        ),
+    ],
+    request=GoalFundingSerializer,
+    responses={
+        200: OpenApiResponse(description="Goal funded successfully"),
+        400: OpenApiResponse(
+            description=(
+                "Validation error, insufficient balance, "
+                "goal paused, or goal already completed."
+            )
+        ),
+        404: OpenApiResponse(description="Goal not found"),
+    },
+    examples=[
+        OpenApiExample(
+            "Fund Goal",
+            request_only=True,
+            value={
+                "amount": 5000
+            },
+        ),
+    ],
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def fund_goal(request, pk):

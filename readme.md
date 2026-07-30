@@ -163,8 +163,19 @@ Mark Deposit Successful
 | GET    | `/api/analytics/goals/?period=2m`   | Get all goals savings by preiod  eg period=2 month  |
 | GET    | `api/analytics/goals/top/`          | Get the top goal savings     |
 
----
+---.
 
+## Swagger doc
+
+
+| Method | Endpoint                            | Description                 |
+| ------ | ----------------------------------- | --------------------------- |
+| GET    | `/api/docs`                  | Get Swagger doc View |
+
+
+
+
+---
 
 # Example Create Goal Request
 
