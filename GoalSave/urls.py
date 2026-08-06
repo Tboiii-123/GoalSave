@@ -24,6 +24,7 @@ from drf_spectacular.views import (
     SpectacularRedocView,
 )
 
+
 urlpatterns = [
     path('admin/', admin.site.urls),
     
@@ -33,7 +34,7 @@ urlpatterns = [
     path("api/payments/", include("apps.payments.urls")),
     path("api/", include("apps.ledger.urls")),
     path("api/analytics/", include("apps.analytics.urls")),
-    path("api/analytics/", include("apps.withdrawal.urls")),
+    path("api/withdrawals/", include("apps.withdrawal.urls")),
     path("api/admin/", include("apps.admin_panel.urls")),
     path("api/withdrawal/", include("apps.withdrawal.urls")),
     

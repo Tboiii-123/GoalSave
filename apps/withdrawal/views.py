@@ -14,7 +14,46 @@ from .models import GoalWithdrawal, WithdrawalStatus
 from .serializers import GoalWithdrawalSerializer
 from .utils import generate_withdrawal_reference
 
+from drf_spectacular.utils import (
+    extend_schema,
+    OpenApiResponse,
+    OpenApiExample,
+)
 
+
+
+@extend_schema(
+    tags=["Withdrawals"],
+    summary="Request a withdrawal",
+    description=(
+        "Creates a withdrawal request for a matured or completed savings goal. "
+        "The request is submitted for admin approval before funds are released."
+    ),
+    request=GoalWithdrawalSerializer,
+    responses={
+        201: GoalWithdrawalSerializer,
+        400: OpenApiResponse(
+            description=(
+                "Validation error, goal not matured, insufficient balance, "
+                "or an existing pending withdrawal."
+            )
+        ),
+        403: OpenApiResponse(description="You do not own this goal"),
+    },
+    examples=[
+        OpenApiExample(
+            "Withdrawal Request",
+            request_only=True,
+            value={
+                "goal": "b4d66dd4-4c75-4dd8-a4fa-8c90b62f4d2e",
+                "amount": 50000,
+                "bank_name": "Access Bank",
+                "account_name": "John Doe",
+                "account_number": "0123456789",
+            },
+        ),
+    ],
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def request_withdrawal(request):
@@ -106,6 +145,14 @@ def request_withdrawal(request):
 
  #Users withdrwal History
 
+@extend_schema(
+    tags=["Withdrawals"],
+    summary="List withdrawal requests",
+    description="Returns the authenticated user's withdrawal request history.",
+    responses={
+        200: GoalWithdrawalSerializer(many=True),
+    },
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def list_withdrawals(request):

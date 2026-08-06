@@ -132,3 +132,23 @@ class AdminUserSerializer(serializers.ModelSerializer):
         instance.save()
 
         return instance
+
+
+class RejectWithdrawalSerializer(serializers.Serializer):
+    remarks = serializers.CharField(required=False, allow_blank=True)
+
+
+
+
+
+class WithdrawalApprovalResponseSerializer(serializers.Serializer):
+    detail = serializers.CharField()
+    reference = serializers.CharField()
+    status = serializers.CharField()
+
+
+
+
+
+class AdminMessageSerializer(serializers.Serializer):
+    detail = serializers.CharField()

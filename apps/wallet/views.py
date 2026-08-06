@@ -7,7 +7,22 @@ from rest_framework.response import Response
 from .models import Wallet
 from .serializers import ( WalletSerializer, WalletTransactionSerializer)
 
+from drf_spectacular.utils import (
+    extend_schema,
+    OpenApiResponse,
+)
 
+
+
+@extend_schema(
+    tags=["Wallet"],
+    summary="Retrieve wallet",
+    description="Returns the authenticated user's wallet details, including the current available balance and other wallet information.",
+    responses={
+        200: WalletSerializer,
+        404: OpenApiResponse(description="Wallet not found"),
+    },
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def get_wallet(request):
@@ -21,6 +36,15 @@ def get_wallet(request):
     return Response(serializer.data)
 
 
+@extend_schema(
+    tags=["Wallet"],
+    summary="List wallet transactions",
+    description="Returns the transaction history for the authenticated user's wallet.",
+    responses={
+        200: WalletTransactionSerializer(many=True),
+        404: OpenApiResponse(description="Wallet not found"),
+    },
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def wallet_transactions(request):

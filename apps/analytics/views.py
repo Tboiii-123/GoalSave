@@ -9,7 +9,22 @@ from decimal import Decimal
 from django.db.models.functions import TruncMonth
 from datetime import timedelta
 from django.utils import timezone
+from drf_spectacular.utils import (
+    extend_schema,
+    OpenApiResponse,
+    OpenApiParameter,
+    OpenApiExample,
+)
 
+
+@extend_schema(
+    tags=["Analytics"],
+    summary="Goal summary",
+    description="Returns a summary of the authenticated user's savings goals, including totals, statuses, and overall savings progress.",
+    responses={
+        200: OpenApiResponse(description="Goal summary retrieved successfully"),
+    },
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def goal_summary(request):
@@ -66,6 +81,25 @@ def goal_summary(request):
     })
 
 # GET /api/analytics/goals/?period=all
+
+@extend_schema(
+    tags=["Analytics"],
+    summary="Monthly savings analytics",
+    description="Returns monthly savings grouped by month for the selected time period.",
+    parameters=[
+        OpenApiParameter(
+            name="period",
+            type=str,
+            location=OpenApiParameter.QUERY,
+            description="Time period: 1m, 3m, 6m, 1y, or all.",
+            required=False,
+        ),
+    ],
+    responses={
+        200: OpenApiResponse(description="Monthly savings retrieved successfully"),
+        400: OpenApiResponse(description="Invalid period"),
+    },
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def monthly_savings(request):
@@ -132,6 +166,24 @@ def monthly_savings(request):
 
 
 #Top savings
+@extend_schema(
+    tags=["Analytics"],
+    summary="Top saving goals",
+    description="Returns the user's top savings goals ordered by saved amount.",
+    parameters=[
+        OpenApiParameter(
+            name="limit",
+            type=int,
+            location=OpenApiParameter.QUERY,
+            description="Maximum number of goals to return.",
+            required=False,
+        ),
+    ],
+    responses={
+        200: OpenApiResponse(description="Top saving goals retrieved successfully"),
+        400: OpenApiResponse(description="Invalid limit"),
+    },
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def top_saving_goals(request):
@@ -180,6 +232,24 @@ def top_saving_goals(request):
 
 
 #Recent Funding
+@extend_schema(
+    tags=["Analytics"],
+    summary="Recent goal fundings",
+    description="Returns the most recent funding transactions for the authenticated user's savings goals.",
+    parameters=[
+        OpenApiParameter(
+            name="limit",
+            type=int,
+            location=OpenApiParameter.QUERY,
+            description="Maximum number of funding records to return.",
+            required=False,
+        ),
+    ],
+    responses={
+        200: OpenApiResponse(description="Recent fundings retrieved successfully"),
+        400: OpenApiResponse(description="Invalid limit"),
+    },
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def recent_goal_fundings(request):
@@ -215,6 +285,23 @@ def recent_goal_fundings(request):
 
 
 #Goal Funding
+@extend_schema(
+    tags=["Analytics"],
+    summary="Goal funding details",
+    description="Returns detailed funding statistics and funding history for a specific savings goal.",
+    parameters=[
+        OpenApiParameter(
+            name="goal_id",
+            type=str,
+            location=OpenApiParameter.PATH,
+            description="Savings Goal ID",
+        ),
+    ],
+    responses={
+        200: OpenApiResponse(description="Goal funding details retrieved successfully"),
+        404: OpenApiResponse(description="Goal not found"),
+    },
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def goal_funding_details(request, goal_id):

@@ -14,12 +14,40 @@ from apps.withdrawal.models import GoalWithdrawal, WithdrawalStatus
 from apps.withdrawal.serializers import GoalWithdrawalSerializer
 from apps.accounts.models import User
 from .permissions import  IsSuperAdmin,IsFinanceAdmin,IsSupportAdmin
-from .serializers import AdminUserSerializer
+from .serializers import AdminUserSerializer,RejectWithdrawalSerializer,WithdrawalApprovalResponseSerializer,AdminMessageSerializer
 
-
+from drf_spectacular.utils import (
+    extend_schema,
+    OpenApiParameter,
+    OpenApiResponse,
+)
 
 
 #Admin - Get  Withdrawals with filters status 
+@extend_schema(
+    tags=["Admin"],
+    summary="List withdrawal requests",
+    description="Returns all withdrawal requests with optional filtering by status or user.",
+    parameters=[
+        OpenApiParameter(
+            name="status",
+            type=str,
+            location=OpenApiParameter.QUERY,
+            description="Filter by withdrawal status (PENDING, SUCCESS, REJECTED).",
+            required=False,
+        ),
+        OpenApiParameter(
+            name="user",
+            type=str,
+            location=OpenApiParameter.QUERY,
+            description="Filter by user ID.",
+            required=False,
+        ),
+    ],
+    responses={
+        200: GoalWithdrawalSerializer(many=True),
+    },
+)
 @api_view(["GET"])
 @permission_classes([IsSuperAdmin])
 def list_withdrawals(request):
@@ -51,6 +79,25 @@ def list_withdrawals(request):
     return Response(serializer.data)
 
 
+@extend_schema(
+    tags=["Admin"],
+    summary="Approve a withdrawal",
+    description="Approves a pending withdrawal request, debits the savings goal, records a ledger entry, and marks the withdrawal as successful.",
+    parameters=[
+        OpenApiParameter(
+            name="pk",
+            type=str,
+            location=OpenApiParameter.PATH,
+            description="Withdrawal ID",
+        ),
+    ],
+    request=None,
+    responses={
+        200: WithdrawalApprovalResponseSerializer,
+        400: AdminMessageSerializer,
+        404: AdminMessageSerializer,
+    },
+)
 @api_view(["PATCH"])
 @permission_classes([IsSuperAdmin])
 def approve_withdrawal(request, pk):
@@ -135,7 +182,27 @@ def approve_withdrawal(request, pk):
 
 
 
+
 #Reject withdrwal
+@extend_schema(
+    tags=["Admin"],
+    summary="Reject a withdrawal",
+    description="Rejects a pending withdrawal request and optionally stores admin remarks.",
+     request=RejectWithdrawalSerializer,
+    parameters=[
+        OpenApiParameter(
+            name="pk",
+            type=str,
+            location=OpenApiParameter.PATH,
+            description="Withdrawal ID",
+        ),
+    ],
+    responses={
+        200: OpenApiResponse(description="Withdrawal rejected successfully"),
+        400: OpenApiResponse(description="Withdrawal already processed"),
+        404: OpenApiResponse(description="Withdrawal not found"),
+    },
+)
 @api_view(["PATCH"])
 @permission_classes([IsSuperAdmin])
 def reject_withdrawal(request, pk):
@@ -156,6 +223,8 @@ def reject_withdrawal(request, pk):
             )
 
         remarks = request.data.get("remarks")
+
+       
 
         withdrawal.status = WithdrawalStatus.REJECTED
         withdrawal.remarks = remarks
@@ -178,6 +247,23 @@ def reject_withdrawal(request, pk):
 
 
 #Get a simgle withdrawal
+@extend_schema(
+    tags=["Admin"],
+    summary="Retrieve a withdrawal",
+    description="Returns the details of a specific withdrawal request.",
+    parameters=[
+        OpenApiParameter(
+            name="pk",
+            type=str,
+            location=OpenApiParameter.PATH,
+            description="Withdrawal ID",
+        ),
+    ],
+    responses={
+        200: GoalWithdrawalSerializer,
+        404: OpenApiResponse(description="Withdrawal not found"),
+    },
+)
 @api_view(["GET"])
 @permission_classes([IsSuperAdmin])
 def retrieve_admin_withdrawal(request, pk):
@@ -208,6 +294,17 @@ def retrieve_admin_withdrawal(request, pk):
 
 
 #     POST   /api/admin/create-users/
+
+@extend_schema(
+    tags=["Admin"],
+    summary="Create a user",
+    description="Creates a new user account.",
+    request=AdminUserSerializer,
+    responses={
+        201: AdminUserSerializer,
+        400: OpenApiResponse(description="Validation error"),
+    },
+)
 @api_view(["POST"])
 @permission_classes([IsSuperAdmin])
 def create_user(request):
@@ -231,6 +328,24 @@ def create_user(request):
 
 #     PATCH   /api/admin/update-users/
 
+@extend_schema(
+    tags=["Admin"],
+    summary="Update a user",
+    description="Updates an existing user's information.",
+    request=AdminUserSerializer,
+    parameters=[
+        OpenApiParameter(
+            name="user_id",
+            type=str,
+            location=OpenApiParameter.PATH,
+            description="User ID",
+        ),
+    ],
+    responses={
+        200: AdminUserSerializer,
+        404: OpenApiResponse(description="User not found"),
+    },
+)
 @api_view(["PATCH"])
 @permission_classes([IsSuperAdmin])
 def update_user(request, user_id):
@@ -256,6 +371,44 @@ from django.db.models import Q
 
 
 # GET    /api/admin/users/
+@extend_schema(
+    tags=["Admin"],
+    summary="List users",
+    description="Returns all users with optional filtering by search, role, approval status, and suspension status.",
+    parameters=[
+        OpenApiParameter(
+            name="search",
+            type=str,
+            location=OpenApiParameter.QUERY,
+            description="Search by email, username, first name, or last name.",
+            required=False,
+        ),
+        OpenApiParameter(
+            name="role",
+            type=str,
+            location=OpenApiParameter.QUERY,
+            description="Filter by user role.",
+            required=False,
+        ),
+        OpenApiParameter(
+            name="approved",
+            type=bool,
+            location=OpenApiParameter.QUERY,
+            description="Filter by approval status.",
+            required=False,
+        ),
+        OpenApiParameter(
+            name="suspended",
+            type=bool,
+            location=OpenApiParameter.QUERY,
+            description="Filter by suspension status.",
+            required=False,
+        ),
+    ],
+    responses={
+        200: AdminUserSerializer(many=True),
+    },
+)
 @api_view(["GET"])
 @permission_classes([IsSuperAdmin])
 def list_users(request):
@@ -305,6 +458,23 @@ def list_users(request):
 
 #DELETE /api/admin/users/<uuid:user_id>/
 
+@extend_schema(
+    tags=["Admin"],
+    summary="Delete a user",
+    description="Deletes a user account.",
+    parameters=[
+        OpenApiParameter(
+            name="user_id",
+            type=str,
+            location=OpenApiParameter.PATH,
+            description="User ID",
+        ),
+    ],
+    responses={
+        200: OpenApiResponse(description="User deleted successfully"),
+        404: OpenApiResponse(description="User not found"),
+    },
+)
 @api_view(["DELETE"])
 @permission_classes([IsSuperAdmin])
 def delete_user(request, user_id):

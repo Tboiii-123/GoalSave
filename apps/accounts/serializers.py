@@ -85,3 +85,7 @@ class UserSerializer(serializers.ModelSerializer):
 
 # class GoogleAuthSerializer(serializers.Serializer):
 #     id_token = serializers.CharField(required=True)
+
+
+class LogoutSerializer(serializers.Serializer):
+    refresh = serializers.CharField()

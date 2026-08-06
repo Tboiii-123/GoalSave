@@ -13,6 +13,15 @@ from rest_framework import status
 from django.db import transaction
 from apps.ledger.models import LedgerEntry,LedgerEntryType,LedgerTransactionType
 
+from drf_spectacular.utils import (
+    extend_schema,
+    OpenApiResponse,
+    OpenApiParameter,
+    OpenApiExample,
+)
+
+
+
 PAYSTACK_INIT_URL = "https://api.paystack.co/transaction/initialize"
 PAYSTACK_VERIFY_URL = "https://api.paystack.co/transaction/verify/"
 
@@ -100,8 +109,31 @@ def verify_paystack_signature(request):
 
 # Instead of trusting logged-in users, you trust Paystack by verifying its signature.
 
-from decimal import Decimal
 
+
+@extend_schema(
+    tags=["Payments"],
+    summary="Paystack webhook",
+    description=(
+        "Receives webhook notifications from Paystack after a successful payment. "
+        "This endpoint verifies the webhook signature, updates the deposit "
+        "transaction, credits the user's wallet, records the wallet transaction, "
+        "and creates a ledger entry. This endpoint is intended to be called only "
+        "by Paystack."
+    ),
+    request=None,
+    responses={
+        200: OpenApiResponse(
+            description="Webhook processed successfully"
+        ),
+        400: OpenApiResponse(
+            description="Invalid signature"
+        ),
+        404: OpenApiResponse(
+            description="Deposit not found"
+        ),
+    },
+)
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def paystack_webhook(request):
