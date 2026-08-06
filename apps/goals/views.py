@@ -1,56 +1,126 @@
-from django.shortcuts import render
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes,throttle_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework import status
 
-from .models import SavingsGoal, GoalStatus
-from .serializers import SavingsGoalSerializer,GoalFundingSerializer
+from .models import SavingsGoal, GoalStatus,GoalMember,GoalMemberStatus,GoalRole,GoalInvitation,InvitationStatus,GoalShareActivity,GoalShareActivityType
+from .serializers import SavingsGoalSerializer,GoalFundingSerializer,GoalInvitationSerializer,GoalMemberSerializer,GoalInvitationListSerializer,GoalContributionSerializer,MessageSerializer,GoalInvitationResponseSerializer
 from django.db import transaction
 from apps.wallet.models import Wallet, WalletTransaction
 from apps.ledger.models import (LedgerEntry,LedgerEntryType,LedgerTransactionType)
 from .models import (SavingsGoal,GoalStatus,GoalFunding)
 from apps.payments.services import generate_reference   
-
-
+from apps.accounts.models import User
 from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import (
+    extend_schema,
+    OpenApiResponse,
+    OpenApiParameter,
+    OpenApiExample,
+)
+from django.utils import timezone
+from apps.utils.throttles import MessageThrottle
 
-
+@extend_schema(
+    tags=["Goals"],
+    summary="Create a savings goal",
+    description="Creates a new savings goal for the authenticated user.",
+    request=SavingsGoalSerializer,
+    responses={
+        201: SavingsGoalSerializer,
+        400: OpenApiResponse(description="Validation error"),
+    },
+    examples=[
+        OpenApiExample(
+            "Create Goal",
+            request_only=True,
+            value={
+                "name": "Buy Laptop",
+                "target_amount": 500000,
+                "target_date": "2026-12-31",
+                  "is_shared": "true",
+            },
+        ),
+    ],
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([MessageThrottle])
 def create_goal(request):
     serializer = SavingsGoalSerializer(data=request.data)
 
     if serializer.is_valid():
-        serializer.save(user=request.user)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+        with transaction.atomic():
+            goal = serializer.save(owner=request.user)
+
+            if goal.is_shared:
+                GoalMember.objects.create(
+                    goal=goal,
+                    owner=request.user,
+                    role=GoalRole.OWNER,
+                )
+
+                GoalShareActivity.objects.create(
+    goal=goal,
+    user=request.user,
+    activity_type=GoalShareActivityType.GOAL_CREATED,
+    message=f"{request.user.first_name} created the shared goal."
+)
+
+        return Response(
+            SavingsGoalSerializer(goal).data,
+            status=status.HTTP_201_CREATED,
+        )
 
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
-
+@extend_schema(
+    tags=["Goals"],
+    summary="List savings goals",
+    description="Returns all savings goals belonging to the authenticated user.",
+    responses={200: SavingsGoalSerializer(many=True)},
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([MessageThrottle])
 def list_goals(request):
-    goals = SavingsGoal.objects.select_related("user").filter(user=request.user).order_by("-created_at")
+    goals = SavingsGoal.objects.select_related("owner").filter(owner=request.user).order_by("-created_at")
     
 
     serializer = SavingsGoalSerializer(goals, many=True)
 
     return Response(serializer.data)
 
+
+
+
+
+
+@extend_schema(
+    tags=["Goals"],
+    summary="Retrieve a savings goal",
+    description="Returns the details of a specific savings goal owned by the authenticated user.",
+    request=None,
+    responses={
+        200: MessageSerializer,
+        404: MessageSerializer,
+    },
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([MessageThrottle])
 def retrieve_goal(request, pk):
     try:
-        goal = SavingsGoal.objects.select_related("user").get(id=pk)
+        goal = SavingsGoal.objects.select_related("owner").get(id=pk)
     except SavingsGoal.DoesNotExist:
         return Response(
             {"detail": "Goal not found."},
             status=status.HTTP_404_NOT_FOUND
         )
 
-    if goal.user != request.user:
+    if goal.owner != request.user:
         return Response(
             {"detail": "Only the owner can access this goal."},
             status=status.HTTP_403_FORBIDDEN
@@ -66,14 +136,35 @@ def retrieve_goal(request, pk):
 
 
 
-
+@extend_schema(
+    tags=["Goals"],
+    summary="Delete a savings goal",
+    description=(
+        "Deletes a savings goal. "
+        "A goal cannot be deleted if it contains saved funds."
+    ),
+    parameters=[
+        OpenApiParameter(
+            name="pk",
+            type=str,
+            location=OpenApiParameter.PATH,
+            description="Savings Goal UUID",
+        )
+    ],
+    request=None,
+    responses={
+        200: MessageSerializer,
+        404: MessageSerializer,
+    },
+)
 @api_view(["DELETE"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([MessageThrottle])
 def delete_goal(request, pk):
     try:
         goal = SavingsGoal.objects.get(
             id=pk,
-            user=request.user
+            owner=request.user
         )
     except SavingsGoal.DoesNotExist:
         return Response(
@@ -81,7 +172,7 @@ def delete_goal(request, pk):
             status=status.HTTP_404_NOT_FOUND
         )
 
-    if goal.user != request.user:
+    if goal.owner != request.user:
         return Response(
             {"detail": "Only the owner can delete this goal."},
             status=status.HTTP_403_FORBIDDEN
@@ -104,13 +195,25 @@ def delete_goal(request, pk):
     )
 
 
+@extend_schema(
+    tags=["Goals"],
+    summary="Pause a savings goal",
+    description="Changes the status of a savings goal to PAUSED.",
+
+    request=None,
+    responses={
+        200: MessageSerializer,
+        404: MessageSerializer,
+    },
+)
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([MessageThrottle])
 def pause_goal(request, pk):
     try:
         goal = SavingsGoal.objects.get(
             id=pk,
-            user=request.user
+            owner=request.user
         )
     except SavingsGoal.DoesNotExist:
         return Response(
@@ -118,7 +221,7 @@ def pause_goal(request, pk):
             status=status.HTTP_404_NOT_FOUND
         )
 
-    if goal.user != request.user:
+    if goal.owner != request.user:
         return Response(
             {"detail": "Only the owner can pause this goal."},
             status=status.HTTP_403_FORBIDDEN
@@ -130,21 +233,31 @@ def pause_goal(request, pk):
     return Response({"detail": "Goal paused successfully."})
 
 
-
+@extend_schema(
+    tags=["Goals"],
+    summary="Resume a savings goal",
+    description="Changes the status of a paused savings goal back to ACTIVE.",
+    request=None,
+    responses={
+        200: MessageSerializer,
+        404: MessageSerializer,
+    },
+)
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([MessageThrottle])
 def resume_goal(request, pk):
     try:
         goal = SavingsGoal.objects.get(
             id=pk,
-            user=request.user
+            owner=request.user
         )
     except SavingsGoal.DoesNotExist:
         return Response(
             {"detail": "Goal not found."},
             status=status.HTTP_404_NOT_FOUND
         )
-    if goal.user != request.user:
+    if goal.owner != request.user:
         return Response(
             {"detail": "Only the owner can resume this goal."},
             status=status.HTTP_403_FORBIDDEN
@@ -156,34 +269,71 @@ def resume_goal(request, pk):
     return Response({"detail": "Goal resumed successfully."})
 
 
+@extend_schema(
+    tags=["Goals"],
+    summary="Complete a savings goal",
+    description="Marks a savings goal as completed.",
+    
+    request=None,
+    responses={
+        200: MessageSerializer,
+        404: MessageSerializer,
+    },
+)
 @api_view(["PATCH"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([MessageThrottle])
 def complete_goal(request, pk):
     try:
         goal = SavingsGoal.objects.get(
             id=pk,
-            user=request.user
+            owner=request.user,
         )
     except SavingsGoal.DoesNotExist:
         return Response(
             {"detail": "Goal not found."},
-            status=status.HTTP_404_NOT_FOUND
-        )
-    if goal.user != request.user:
-        return Response(
-            {"detail": "Only the owner can mark_complete this goal."},
-            status=status.HTTP_403_FORBIDDEN
+            status=status.HTTP_404_NOT_FOUND,
         )
 
     goal.status = GoalStatus.COMPLETED
     goal.save(update_fields=["status"])
 
-    return Response({"detail": "Goal marked as completed."})
-
-
-
+    return Response(
+        {"detail": "Goal marked as completed."},
+        status=status.HTTP_200_OK,
+    )
+@extend_schema(
+    tags=["Goals"],
+    summary="Fund a savings goal",
+    description=(
+        "Transfers money from the authenticated user's wallet "
+        "into one of their savings goals."
+    ),
+    
+    request=GoalFundingSerializer,
+    responses={
+        200: OpenApiResponse(description="Goal funded successfully"),
+        400: OpenApiResponse(
+            description=(
+                "Validation error, insufficient balance, "
+                "goal paused, or goal already completed."
+            )
+        ),
+        404: OpenApiResponse(description="Goal not found"),
+    },
+    examples=[
+        OpenApiExample(
+            "Fund Goal",
+            request_only=True,
+            value={
+                "amount": 5000
+            },
+        ),
+    ],
+)
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([MessageThrottle])
 def fund_goal(request, pk):
 
     serializer = GoalFundingSerializer(data=request.data)
@@ -205,8 +355,48 @@ def fund_goal(request, pk):
         goal = get_object_or_404(
             SavingsGoal.objects.select_for_update(),
             id=pk,
-            user=request.user
         )
+
+        # ===========================
+        # Permission Checks
+        # ===========================
+
+        if goal.is_shared:
+
+            member = GoalMember.objects.filter(
+                goal=goal,
+                user=request.user,
+            ).first()
+
+            if not member:
+                return Response(
+                    {
+                        "detail": "You are not a member of this shared goal."
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+            if member.role == GoalRole.VIEWER:
+                return Response(
+                    {
+                        "detail": "Viewers cannot fund this goal."
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+        else:
+
+            if goal.user != request.user:  # Change to goal.owner if renamed
+                return Response(
+                    {
+                        "detail": "You do not own this goal."
+                    },
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+        # ===========================
+        # Goal Status Checks
+        # ===========================
 
         if goal.status == GoalStatus.PAUSED:
             return Response(
@@ -219,6 +409,10 @@ def fund_goal(request, pk):
                 {"detail": "Goal is already completed."},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+        # ===========================
+        # Wallet Balance Check
+        # ===========================
 
         if wallet.available_balance < amount:
             return Response(
@@ -244,15 +438,23 @@ def fund_goal(request, pk):
 
         reference = generate_reference()
 
-        # Goal funding history
+        # Goal Funding Record
         GoalFunding.objects.create(
             wallet=wallet,
+            user=request.user,  # Add this field to your model
             goal=goal,
             reference=reference,
-            amount=amount
+            amount=amount,
         )
+            #Goal Share Activity
+        GoalShareActivity.objects.create(
+    goal=goal,
+    user=request.user,
+    activity_type=GoalShareActivityType.CONTRIBUTION,
+    message=f"{request.user.first_name} contributed ₦{amount}."
+)
 
-        # Wallet transaction
+        # Wallet Transaction
         WalletTransaction.objects.create(
             wallet=wallet,
             reference=reference,
@@ -264,7 +466,7 @@ def fund_goal(request, pk):
             description=f"Transferred to goal: {goal.name}"
         )
 
-        # Ledger entry
+        # Ledger Entry
         LedgerEntry.objects.create(
             wallet=wallet,
             transaction_reference=reference,
@@ -279,9 +481,562 @@ def fund_goal(request, pk):
     return Response(
         {
             "message": "Goal funded successfully.",
+            "contributed_by": request.user.email,
+            "amount": amount,
             "wallet_balance": wallet.available_balance,
             "goal_saved": goal.saved_amount,
             "goal_status": goal.status,
         },
-        status=status.HTTP_200_OK
+        status=status.HTTP_200_OK,
+    )
+
+#Goal invite
+
+
+
+@extend_schema(
+    tags=["Goal Members"],
+    summary="Invite a member to a shared goal",
+    description=(
+        "Allows the owner of a shared savings goal to invite another user "
+        "by email. If the email belongs to an existing user, they can later "
+        "accept the invitation. Otherwise, the invitation can be used after "
+        "registration."
+    ),
+    request=GoalInvitationSerializer,
+    responses={
+        201: GoalInvitationResponseSerializer,
+        400: MessageSerializer,
+        403: MessageSerializer,
+        404: MessageSerializer,
+    },
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+@throttle_classes([MessageThrottle])
+def invite_goal_member(request, pk):
+    serializer = GoalInvitationSerializer(data=request.data)
+
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    email = serializer.validated_data["email"]
+
+    try:
+        goal = SavingsGoal.objects.get(id=pk)
+    except SavingsGoal.DoesNotExist:
+        return Response(
+            {"detail": "Goal not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    # Only owner can invite
+    if goal.owner != request.user:     
+        return Response(
+            {"detail": "You are not allowed to invite members to this goal."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    # Goal must be shared
+    if not goal.is_shared:
+        return Response(
+            {"detail": "This is not a shared goal."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Already a member?
+    if User.objects.filter(email=email).exists():
+        invited_user = User.objects.get(email=email)
+
+        if GoalMember.objects.filter(
+            goal=goal,
+            owner=invited_user
+        ).exists():
+            return Response(
+                {"detail": "This user is already a member of this goal."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+    # Pending invitation already exists?
+    if GoalInvitation.objects.filter(
+        goal=goal,
+        email=email,
+        status=InvitationStatus.PENDING
+    ).exists():
+        return Response(
+            {"detail": "An invitation has already been sent to this email."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    with transaction.atomic():
+        invitation = GoalInvitation.objects.create(
+            goal=goal,
+            email=email,
+            invited_by=request.user,
+        )
+
+
+
+        # TODO
+        # If email belongs to a registered user:
+        #   create notification
+        #
+        # Else:
+        #   send signup email
+        #
+        # In both cases send an invitation email containing:
+        # https://goalsave.app/invitations/{invitation.token}
+
+    return Response(
+        {
+            "message": "Invitation sent successfully.",
+            "token": str(invitation.token),   # remove this in production
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
+
+
+#Accepts Goal request
+
+
+@extend_schema(
+    tags=["Goal Members"],
+    summary="Accept a goal invitation",
+    description="Allows a user to accept a pending invitation and join a shared savings goal.",
+    request=None,
+    parameters=[
+        OpenApiParameter(
+            name="token",
+            type=str,
+            location=OpenApiParameter.PATH,
+            description="Invitation token",
+        ),
+    ],
+    responses={
+        200: MessageSerializer,
+        400: MessageSerializer,
+        403: MessageSerializer,
+        404: MessageSerializer,
+    },
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+@throttle_classes([MessageThrottle])
+def accept_goal_invitation(request, token):
+    try:
+        invitation = GoalInvitation.objects.select_related(
+            "goal",
+            "goal__owner",
+        ).get(
+            token=token
+        )
+
+    except GoalInvitation.DoesNotExist:
+        return Response(
+            {"detail": "Invitation not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if invitation.status != InvitationStatus.PENDING:
+        return Response(
+            {"detail": "This invitation is no longer valid."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if invitation.expires_at < timezone.now():
+
+        invitation.status = InvitationStatus.EXPIRED
+        invitation.save(update_fields=["status"])
+
+        return Response(
+            {"detail": "Invitation has expired."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if request.user.email.lower() != invitation.email.lower():
+        return Response(
+            {
+                "detail": "This invitation was sent to another email address."
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    if GoalMember.objects.filter(
+        goal=invitation.goal,
+        owner=request.user,
+    ).exists():
+
+        return Response(
+            {"detail": "You are already a member of this goal."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    with transaction.atomic():
+
+        GoalMember.objects.create(
+            goal=invitation.goal,
+            owner=request.user,
+            role=GoalRole.CONTRIBUTOR,
+        )
+
+        GoalShareActivity.objects.create(
+    goal=invitation.goal,
+    user=request.user,
+    activity_type=GoalShareActivityType.MEMBER_JOINED,
+    message=f"{request.user.first_name} joined the goal."
+)
+
+        invitation.status = InvitationStatus.ACCEPTED
+        invitation.save(update_fields=["status"])
+
+    return Response(
+        {
+            "message": "You have successfully joined the shared goal."
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+
+
+@extend_schema(
+    tags=["Goal Members"],
+
+    summary="Decline a goal invitation",
+    description="Allows a user to decline a pending invitation to a shared savings goal.",
+    request=None,
+    parameters=[
+        OpenApiParameter(
+            name="token",
+            type=str,
+            location=OpenApiParameter.PATH,
+            description="Invitation token",
+        ),
+    ],
+    responses={
+        200: MessageSerializer,
+        400: MessageSerializer,
+        403: MessageSerializer,
+        404: MessageSerializer,
+    },
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+
+def decline_goal_invitation(request, token):
+    try:
+        invitation = GoalInvitation.objects.get(token=token)
+
+    except GoalInvitation.DoesNotExist:
+        return Response(
+            {"detail": "Invitation not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if invitation.status != InvitationStatus.PENDING:
+        return Response(
+            {"detail": "This invitation is no longer valid."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if invitation.expires_at < timezone.now():
+        invitation.status = InvitationStatus.EXPIRED
+        invitation.save(update_fields=["status"])
+
+        return Response(
+            {"detail": "Invitation has expired."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if request.user.email.lower() != invitation.email.lower():
+        return Response(
+            {
+                "detail": "This invitation was sent to another email address."
+            },
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    invitation.status = InvitationStatus.DECLINED
+    invitation.save(update_fields=["status"])
+
+    return Response(
+        {
+            "message": "Invitation declined successfully."
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+
+#Goal Members
+
+@extend_schema(
+    tags=["Goal Members"],
+    summary="List goal members",
+    description="Returns all members of a shared savings goal.",
+
+    request=None,
+    responses={
+        200: GoalMemberSerializer(many=True),
+        403: MessageSerializer,
+        404: MessageSerializer,
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+@throttle_classes([MessageThrottle])
+def goal_members(request, pk):
+    try:
+        goal = SavingsGoal.objects.get(pk=pk)
+
+    except SavingsGoal.DoesNotExist:
+        return Response(
+            {"detail": "Goal not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if not GoalMember.objects.filter(
+        goal=goal,
+        owner=request.user,
+    ).exists():
+        return Response(
+            {"detail": "You are not a member of this goal."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    members = (
+        GoalMember.objects
+        .filter(goal=goal)
+        .select_related("owner")
+        .order_by("joined_at")
+    )
+
+    serializer = GoalMemberSerializer(members, many=True)
+
+    return Response(serializer.data)
+
+
+@extend_schema(
+    tags=["Goal Members"],
+    summary="Remove a goal member",
+    description="Allows the owner of a shared goal to remove a member.",
+
+    request=None,
+    responses={
+        200: MessageSerializer,
+        400: MessageSerializer,
+        403: MessageSerializer,
+        404: MessageSerializer,
+    },
+)
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+@throttle_classes([MessageThrottle])
+def remove_goal_member(request, goal_id, member_id):
+    try:
+        goal = SavingsGoal.objects.get(pk=goal_id)
+    except SavingsGoal.DoesNotExist:
+        return Response(
+            {"detail": "Goal not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    # Only the owner can remove members
+    if goal.owner != request.user:   
+        return Response(
+            {"detail": "Only the goal owner can remove members."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    try:
+        member = GoalMember.objects.get(
+            pk=member_id,
+            goal=goal,
+        )
+    except GoalMember.DoesNotExist:
+        return Response(
+            {"detail": "Member not found."},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    # Prevent owner from removing themselves
+    if member.role == GoalRole.OWNER:
+        return Response(
+            {"detail": "The owner cannot be removed from the goal."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    member.delete()
+
+    GoalShareActivity.objects.create(
+    goal=goal,
+    user=member.user,
+    activity_type=GoalShareActivityType.MEMBER_REMOVED,
+    message=f"{member.user.first_name} was removed from the goal."
+)
+
+    return Response(
+        {"message": "Member removed successfully."},
+        status=status.HTTP_200_OK,
+    )
+
+
+@extend_schema(
+    tags=["Goal Members"],
+    summary="My pending invitations",
+    description="Returns all pending invitations for the authenticated user.",
+    request=None,
+    responses={
+        200: GoalInvitationListSerializer(many=True),
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+@throttle_classes([MessageThrottle])
+def my_goal_invitations(request):
+
+    invitations = (
+        GoalInvitation.objects
+        .filter(
+            email=request.user.email,
+            status=InvitationStatus.PENDING,
+            expires_at__gt=timezone.now(),
+        )
+        .select_related("goal", "goal__owner")
+        .order_by("-created_at")
+    )
+
+    serializer = GoalInvitationListSerializer(
+        invitations,
+        many=True,
+    )
+
+    return Response(serializer.data)
+
+
+@extend_schema(
+    tags=["Goal Members"],
+    summary="Goal contribution",
+    description="Returns all funding contributions made to a savings goal.",
+    parameters=[
+        OpenApiParameter(
+            name="pk",
+            type=str,
+            location=OpenApiParameter.PATH,
+            description="Savings Goal UUID",
+        ),
+    ],
+    request=None,
+    responses={
+        200: GoalContributionSerializer(many=True),
+        403: MessageSerializer,
+    },
+)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+@throttle_classes([MessageThrottle])
+def goal_contributions(request, pk):
+
+    goal = get_object_or_404(
+        SavingsGoal,
+        pk=pk,
+    )
+
+    if goal.is_shared:
+
+        if not GoalMember.objects.filter(
+            goal=goal,
+            user=request.user,
+        ).exists():
+
+            return Response(
+                {
+                    "detail": "You are not a member of this shared goal."
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+    else:
+
+        if goal.owner != request.user:      
+            return Response(
+                {
+                    "detail": "You do not own this goal."
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+    contributions = (
+        GoalFunding.objects
+        .filter(goal=goal)
+        .select_related("user")
+        .order_by("-created_at")
+    )
+
+    serializer = GoalContributionSerializer(
+        contributions,
+        many=True,
+    )
+
+    return Response(serializer.data)
+
+
+@extend_schema(
+    tags=["Goal Members"],
+    summary="Leave a shared goal",
+    description="Allows a contributor to leave a shared savings goal.",
+    request=None,
+    responses={
+        200: MessageSerializer,
+        400: MessageSerializer,
+        404: MessageSerializer,
+    },
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+@throttle_classes([MessageThrottle])
+def leave_shared_goal(request, pk):
+
+    goal = get_object_or_404(
+        SavingsGoal,
+        pk=pk,
+    )
+
+    if not goal.is_shared:
+        return Response(
+            {
+                "detail": "This is not a shared goal."
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    member = GoalMember.objects.filter(
+        goal=goal,
+        owner=request.user,
+    ).first()
+
+    if not member:
+        return Response(
+            {
+                "detail": "You are not a member of this goal."
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    if member.role == GoalRole.OWNER:
+        return Response(
+            {
+                "detail": "The owner cannot leave a shared goal."
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    member.delete()
+
+    return Response(
+        {
+            "message": "You have successfully left the shared goal."
+        },
+        status=status.HTTP_200_OK,
     )

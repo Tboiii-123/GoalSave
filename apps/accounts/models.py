@@ -19,6 +19,8 @@ class UserManager(BaseUserManager):
     def create_superuser(self, email, password, **extra_fields):
         extra_fields.setdefault('is_staff', True)
         extra_fields.setdefault('is_superuser', True)
+        #Role implemneted
+        extra_fields.setdefault("role", User.Role.SUPER_ADMIN)  # or "ADMIN"
         return self.create_user(email, password, **extra_fields)
 
 
@@ -33,6 +35,20 @@ class User(AbstractUser):
 
     is_approved = models.BooleanField(default=False)
     is_suspended = models.BooleanField(default=False)
+
+
+
+    class Role(models.TextChoices):
+        USER = "USER", "User"
+        FINANCE = "FINANCE", "Finance Admin"
+        SUPPORT = "SUPPORT", "Support"
+        SUPER_ADMIN = "SUPER_ADMIN", "Super Admin"
+
+    role = models.CharField(
+        max_length=20,
+        choices=Role.choices,
+        default=Role.USER,
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

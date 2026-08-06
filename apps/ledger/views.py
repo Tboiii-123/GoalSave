@@ -6,9 +6,26 @@ from rest_framework.response import Response
 
 from .models import LedgerEntry
 from .serializers import LedgerEntrySerializer
+from apps.accounts.models import User
+
+
+from drf_spectacular.utils import (
+    extend_schema,
+    OpenApiParameter,
+    OpenApiResponse,
+)
+
 
 
 #Admin enpoint
+@extend_schema(
+    tags=["Admin"],
+    summary="List ledger entries",
+    description="Returns all ledger entries ordered by the most recent first.",
+    responses={
+        200: LedgerEntrySerializer(many=True),
+    },
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def list_ledger_entries(request):
@@ -24,10 +41,25 @@ def list_ledger_entries(request):
 
 
 
-from django.shortcuts import get_object_or_404
-from apps.accounts.models import User
 
 
+@extend_schema(
+    tags=["Admin"],
+    summary="List a user's ledger entries",
+    description="Returns all ledger entries belonging to a specific user.",
+    parameters=[
+        OpenApiParameter(
+            name="user_id",
+            type=str,
+            location=OpenApiParameter.PATH,
+            description="User ID",
+        ),
+    ],
+    responses={
+        200: LedgerEntrySerializer(many=True),
+        404: OpenApiResponse(description="User not found"),
+    },
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def list_user_ledger_entries(request, user_id):
@@ -43,6 +75,24 @@ def list_user_ledger_entries(request, user_id):
 
     return Response(serializer.data)
 
+
+@extend_schema(
+    tags=["Admin"],
+    summary="Retrieve a ledger entry",
+    description="Returns the details of a specific ledger entry.",
+    parameters=[
+        OpenApiParameter(
+            name="pk",
+            type=str,
+            location=OpenApiParameter.PATH,
+            description="Ledger entry ID",
+        ),
+    ],
+    responses={
+        200: LedgerEntrySerializer,
+        404: OpenApiResponse(description="Ledger entry not found"),
+    },
+)
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def retrieve_ledger_entry(request, pk):

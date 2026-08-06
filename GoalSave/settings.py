@@ -42,10 +42,13 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+
+    #Rest Framework
     'rest_framework',
-             'rest_framework_simplejwt',
-        'rest_framework_simplejwt.token_blacklist',
-            
+     'rest_framework_simplejwt',
+    'rest_framework_simplejwt.token_blacklist',
+
+      #Apps         
     'apps.accounts',
     'apps.analytics',
     'apps.audit',
@@ -53,7 +56,12 @@ INSTALLED_APPS = [
     'apps.notifications',
     'apps.payments',
     'apps.wallet',
-    'apps.ledger'
+    'apps.ledger',
+    'apps.admin_panel',
+    'apps.withdrawal',
+
+    #Doc
+    "drf_spectacular",
     
     
 ]
@@ -148,6 +156,8 @@ AUTH_USER_MODEL = 'accounts.User'
 
 
 REST_FRAMEWORK = {
+
+ "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
@@ -158,16 +168,18 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 10,
 
-    #  'DEFAULT_THROTTLE_CLASSES': [
-    #     'rest_framework.throttling.AnonRateThrottle',
-    #     'rest_framework.throttling.UserRateThrottle',
-    # ],
+     'DEFAULT_THROTTLE_CLASSES': [
+        'rest_framework.throttling.AnonRateThrottle',
+        'rest_framework.throttling.UserRateThrottle',
+    ],
 
-    #  'DEFAULT_THROTTLE_RATES': {
-    #     'anon': '10/min',      # general anon users
-    #     'user': '20/min',      # general authenticated users
-    #     'login': '5/min',      # login endpoint
-    # },
+     'DEFAULT_THROTTLE_RATES': {
+        'anon': '5/min',      # general anon users
+        'user': '20/min',      # general authenticated users
+        'login': '5/min',      # login endpoint
+        'message':'10/min',
+        'register':'3/min'
+    },
 
 }
 
@@ -180,3 +192,32 @@ SIMPLE_JWT = {
 
 PAYSTACK_SECRET_KEY =config('PAYSTACK_SECRET_KEY')
 PAYSTACK_PUBLIC_KEY = config('PAYSTACK_PUBLIC_KEY')
+
+
+#Swaggger_doc
+SPECTACULAR_SETTINGS = {
+    "TITLE": "GoalSave API",
+    "DESCRIPTION": "GoalSave Backend API",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+    
+    "SWAGGER_UI_SETTINGS": {
+        "persistAuthorization": True,
+    },
+    
+}
+
+
+
+
+REDIS_URL = config("REDIS_URL")
+
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": REDIS_URL,
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+        },
+    }
+}

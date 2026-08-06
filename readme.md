@@ -1,8 +1,9 @@
 # GoalSave API 💰🎯
 
-A secure, goal-based savings REST API built with Django and Django REST Framework.
+**GoalSave** is a secure, production-ready goal-based savings REST API built with Django and Django REST Framework.
 
-GoalSave allows users to create personal savings goals, fund their wallet through Paystack, and allocate funds toward financial goals while tracking their savings progress.
+It enables users to create and manage personal and shared savings goals, securely fund their wallets through Paystack, allocate funds toward their goals, invite members to collaborate on shared goals, track contributions and savings progress, request withdrawals, and monitor transactions through a complete wallet and ledger system. The API also includes JWT authentication, role-based access control, rate limiting, API documentation with Swagger/OpenAPI, and background-ready architecture for notifications and asynchronous tasks.
+
 
 > 🚧 **Project Status:** Active Development
 
@@ -82,6 +83,48 @@ Mark Deposit Successful
 
 ---
 
+
+# Withdrwal flow
+
+```text
+User
+   │
+   ▼
+POST /withdrawals/request/
+   │
+   ▼
+GoalWithdrawal
+Status = PENDING
+
+────────────────────────────
+
+Admin Dashboard
+   │
+   ▼
+View Pending Withdrawals
+   │
+   ▼
+Transfer money manually
+   │
+   ▼
+Click Approve
+   │
+   ▼
+transaction.atomic()
+   │
+   ├── Lock Withdrawal
+   ├── Lock Goal
+   ├── Lock Wallet
+   ├── Verify Balance
+   ├── Deduct Goal Balance
+   ├── Create Ledger Entry
+   ├── Mark SUCCESS
+   └── Save processed_at
+```
+---
+
+
+
 # Tech Stack
 
 * Python
@@ -93,6 +136,7 @@ Mark Deposit Successful
 * Docker (planned)
 * Redis (planned)
 * Celery (planned)
+* Spectacular [Swagger-doc]      
 
 ---
 
@@ -134,6 +178,30 @@ Mark Deposit Successful
 
 ---
 
+
+### Shared Goals
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/api/goals/<id>/invite/` | Invite member by email |
+| GET | `/api/goals/<id>/members/` | List goal members |
+| DELETE | `/api/goals/<id>/members/<member_id>/` | Remove a member |
+| POST | `/api/goals/<id>/leave/` | Leave shared goal |
+| GET | `/api/goals/<id>/contributions/` | View contribution history |
+| GET | `/api/goals/<id>/activities/` | View activity feed |
+
+---
+
+### Goal Invitations
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/api/goals/invitations/` | List my pending invitations |
+| POST | `/api/goals/invitations/<token>/accept/` | Accept invitation |
+| POST | `/api/goals/invitations/<token>/decline/` | Decline invitation |
+
+---
+
 ## Payments
 
 | Method | Endpoint                            | Description                 |
@@ -149,10 +217,9 @@ Mark Deposit Successful
 
 | Method | Endpoint                            | Description                 |
 | ------ | ----------------------------------- | --------------------------- |
-| GET  | `/api/admin/ledger/`            | Get all ledger entry |
-
-| GET    | `admin/ledger/user/<int:user_id>/` | Get all ledger by user              |
-| GET   | `admin/ledger/<int:pk>/`            | Get ledger by single detail       |
+| GET    | `/api/admin/ledger/`                  | Get all ledger entry |
+| GET    | `admin/ledger/user/<int:user_id>/`  | Get all ledger by user        |
+| GET    | `admin/ledger/<int:pk>/`             | Get ledger by single detail       |
 
 ---
 
@@ -160,13 +227,23 @@ Mark Deposit Successful
 
 | Method | Endpoint                            | Description                 |
 | ------ | ----------------------------------- | --------------------------- |
-| GET  | `/api/analytics/goal/summary/`            | Get all ledger entry |
-
-| GET    | `/api/analytics/goals/?period=2m` | Get all goals savings by preiod  eg period=2 month               |
-| GET   | `api/analytics/goals/top/`            | Get the top goal savings     |
+| GET    | `/api/analytics/goal/summary/`      | Get all ledger entry |
+| GET    | `/api/analytics/goals/?period=2m`   | Get all goals savings by preiod  eg period=2 month  |
+| GET    | `api/analytics/goals/top/`          | Get the top goal savings     |
 
 ---
 
+## Swagger doc
+
+
+| Method | Endpoint                            | Description                 |
+| ------ | ----------------------------------- | --------------------------- |
+| GET    | `/api/docs`                  | Get Swagger doc View |
+
+
+
+
+---
 
 # Example Create Goal Request
 
