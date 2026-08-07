@@ -20,7 +20,7 @@ from drf_spectacular.utils import (
 )
 from django.utils import timezone
 from apps.utils.throttles import MessageThrottle
-
+from apps.utils.cache import get_or_set_cache
 @extend_schema(
     tags=["Goals"],
     summary="Create a savings goal",
@@ -86,14 +86,30 @@ def create_goal(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([MessageThrottle])
 def list_goals(request):
-    goals = SavingsGoal.objects.select_related("owner").filter(owner=request.user).order_by("-created_at")
-    
 
-    serializer = SavingsGoalSerializer(goals, many=True)
+    cache_key = f"goals:{request.user.id}"
 
-    return Response(serializer.data)
+    def fetch_goals():
+        goals = (
+            SavingsGoal.objects
+            .select_related("owner")
+            .filter(owner=request.user)
+            .order_by("-created_at")
+        )
 
+        return SavingsGoalSerializer(
+            goals,
+            many=True,
+            context={"request": request},
+        ).data
 
+    data = get_or_set_cache(
+        key=cache_key,
+        fetch_data=fetch_goals,
+        timeout=300,
+    )
+
+    return Response(data)
 
 
 

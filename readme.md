@@ -127,16 +127,17 @@ transaction.atomic()
 
 # Tech Stack
 
-* Python
-* Django
-* Django REST Framework
-* PostgreSQL
-* JWT Authentication
-* Paystack API
+* Python - Backend programming language
+* Django - framework
+* Django REST Framework -  REST API development
+* PostgreSQL - Relational database
+* Simple JWT — JWT-based authentication
+* Paystack API -  Payment processing
 * Docker (planned)
-* Redis (planned)
+* Redis -  Caching
 * Celery (planned)
-* Spectacular [Swagger-doc]      
+* drf-spectacular -  OpenAPI schema and Swagger API documentation      
+* Python Logging -  Application logging and error monitoring 
 
 ---
 
@@ -316,15 +317,12 @@ python manage.py runserver
 
 # Future Improvements
 
-* Goal funding from wallet
 * Scheduled savings
-* Goal analytics
 * Email notifications
 * Redis caching
 * Celery background tasks
 * Docker deployment
 * CI/CD pipeline
-* API documentation (Swagger/OpenAPI)
 * Unit and integration tests
 
 ---
