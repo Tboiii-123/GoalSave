@@ -20,7 +20,8 @@ class SavingsGoal(models.Model):
 
     description = models.TextField(blank=True,null=True)
 
-    target_amount = models.DecimalField(max_digits=12,decimal_places=2)
+    target_amount = models.DecimalField(max_digits=12,decimal_places=2,    null=True,
+    blank=True)
 
     saved_amount = models.DecimalField(max_digits=12,decimal_places=2,default=0)
 

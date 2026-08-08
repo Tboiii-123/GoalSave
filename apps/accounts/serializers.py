@@ -30,12 +30,7 @@ class RegisterSerializer(serializers.ModelSerializer):
 
 
 class ProfileSerializer(serializers.ModelSerializer):
-    # avatar = serializers.SerializerMethodField()
-
-    # def get_image(self, obj):
-    #     if obj.avatar:
-    #         return obj.avatar.url
-    #     return None
+    
     class Meta:
         model = Profile
         fields = [

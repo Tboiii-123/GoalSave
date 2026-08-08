@@ -29,17 +29,18 @@ class SavingsGoalSerializer(serializers.ModelSerializer):
             "updated_at",
         )
 
-    def get_progress(self, obj)  -> float:
-        if obj.target_amount == 0:
+    def get_progress(self, obj) -> float:
+        if not obj.target_amount or obj.target_amount <= 0 or obj.target_amount == 0:
             return 0
 
-        return round((obj.saved_amount / obj.target_amount) * 100, 2)
+        return round(
+            (obj.saved_amount / obj.target_amount) * 100,2)
 
     def validate_target_amount(self, value):
-        if value <= 0:
+        if value is not None and value <= 0:
             raise serializers.ValidationError(
-                "Target amount must be greater than zero."
-            )
+            "Target amount must be greater than zero."
+        )
         return value
 
 class GoalFundingSerializer(serializers.Serializer):
@@ -55,6 +56,7 @@ class GoalFundingSerializer(serializers.Serializer):
             )
 
         return value
+   
 
 
 
@@ -140,3 +142,40 @@ class GoalInvitationResponseSerializer(serializers.Serializer):
 
 
 
+#AI Integrtaion prompt
+
+class SmartGoalPlannerSerializer(serializers.Serializer):
+    prompt = serializers.CharField(
+        required=True,
+        allow_blank=False,
+    )
+
+
+
+
+class SmartGoalPlanSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=150)
+
+    target_amount = serializers.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        required=False,
+        allow_null=True,
+    )
+
+    target_date = serializers.DateField(
+        required=False,
+        allow_null=True,
+    )
+
+    is_shared = serializers.BooleanField(
+        default=False
+    )
+
+    def validate_target_amount(self, value):
+        if value is not None and value <= 0:
+            raise serializers.ValidationError(
+                "Target amount must be greater than zero."
+            )
+
+        return value

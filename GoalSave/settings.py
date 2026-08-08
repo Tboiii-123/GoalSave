@@ -14,6 +14,7 @@ from pathlib import Path
 from datetime import timedelta
 from decouple import config
 
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -158,6 +159,7 @@ AUTH_USER_MODEL = 'accounts.User'
 REST_FRAMEWORK = {
 
  "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+ 
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
     ),
@@ -178,7 +180,8 @@ REST_FRAMEWORK = {
         'user': '20/min',      # general authenticated users
         'login': '5/min',      # login endpoint
         'message':'10/min',
-        'register':'3/min'
+        'register':'3/min',
+        'ai': '3/min'
     },
 
 }
@@ -209,7 +212,6 @@ SPECTACULAR_SETTINGS = {
 
 
 
-
 REDIS_URL = config("REDIS_URL")
 
 CACHES = {
@@ -221,3 +223,22 @@ CACHES = {
         },
     }
 }
+
+
+#Logs
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {"class": "logging.StreamHandler"},
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": "INFO"
+
+    },
+}
+
+
+GROQ_API_KEY = config("GROQ_API_KEY")

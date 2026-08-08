@@ -19,3 +19,8 @@ class RegisterThrottle(AnonRateThrottle):
 
 class MessageThrottle(UserRateThrottle):
     scope = "message"
+
+
+
+class AiThrottle(UserRateThrottle):
+    scope = "ai"
