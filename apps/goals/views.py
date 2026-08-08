@@ -4,7 +4,9 @@ from rest_framework.response import Response
 from rest_framework import status
 
 from .models import SavingsGoal, GoalStatus,GoalMember,GoalMemberStatus,GoalRole,GoalInvitation,InvitationStatus,GoalShareActivity,GoalShareActivityType
-from .serializers import SavingsGoalSerializer,GoalFundingSerializer,GoalInvitationSerializer,GoalMemberSerializer,GoalInvitationListSerializer,GoalContributionSerializer,MessageSerializer,GoalInvitationResponseSerializer
+from .serializers import (SavingsGoalSerializer,GoalFundingSerializer,GoalInvitationSerializer,
+GoalMemberSerializer,GoalInvitationListSerializer,GoalContributionSerializer,MessageSerializer
+,GoalInvitationResponseSerializer,SmartGoalPlannerSerializer,SmartGoalPlanSerializer)
 from django.db import transaction
 from apps.wallet.models import Wallet, WalletTransaction
 from apps.ledger.models import (LedgerEntry,LedgerEntryType,LedgerTransactionType)
@@ -19,8 +21,10 @@ from drf_spectacular.utils import (
     OpenApiExample,
 )
 from django.utils import timezone
-from apps.utils.throttles import MessageThrottle
+from apps.utils.throttles import MessageThrottle,AiThrottle
 from apps.utils.cache import get_or_set_cache
+from apps.utils.ai import generate_smart_goal_plan
+
 @extend_schema(
     tags=["Goals"],
     summary="Create a savings goal",
@@ -1054,5 +1058,63 @@ def leave_shared_goal(request, pk):
         {
             "message": "You have successfully left the shared goal."
         },
+        status=status.HTTP_200_OK,
+    )
+
+
+
+
+
+@extend_schema(
+       tags=["Smart AI"],
+    request=SmartGoalPlannerSerializer,
+    responses={
+        200: SmartGoalPlanSerializer,
+        502: {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string",
+                }
+            },
+        },
+    },
+    description=(
+        "Uses AI to extract structured savings goal information "
+        "from a natural language prompt."
+    ),
+    summary="Create a smart goal plan",
+)
+@api_view(["POST"])
+@throttle_classes([AiThrottle])
+def smart_goal_planner(request):
+
+    input_serializer = SmartGoalPlannerSerializer(
+        data=request.data
+    )
+
+    input_serializer.is_valid(raise_exception=True)
+
+    prompt = input_serializer.validated_data["prompt"]
+
+    try:
+        ai_plan = generate_smart_goal_plan(prompt)
+
+    except Exception:
+        return Response(
+            {
+                "error": "Unable to generate goal plan."
+            },
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+
+    plan_serializer = SmartGoalPlanSerializer(
+        data=ai_plan
+    )
+
+    plan_serializer.is_valid(raise_exception=True)
+
+    return Response(
+        plan_serializer.validated_data,
         status=status.HTTP_200_OK,
     )

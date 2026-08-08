@@ -68,4 +68,10 @@ urlpatterns = [
         views.goal_contributions,
         name="goal-contributions",
     ),
+
+     path(
+        "ai/plan-goal/",
+        views.smart_goal_planner,
+        name="smart-goal-planner",
+    ),
 ]

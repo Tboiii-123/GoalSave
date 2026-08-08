@@ -2,8 +2,7 @@
 
 **GoalSave** is a secure, production-ready goal-based savings REST API built with Django and Django REST Framework.
 
-It enables users to create and manage personal and shared savings goals, securely fund their wallets through Paystack, allocate funds toward their goals, invite members to collaborate on shared goals, track contributions and savings progress, request withdrawals, and monitor transactions through a complete wallet and ledger system. The API also includes JWT authentication, role-based access control, rate limiting, API documentation with Swagger/OpenAPI, and background-ready architecture for notifications and asynchronous tasks.
-
+It enables users to create and manage personal and shared savings goals, securely fund their wallets through Paystack, allocate funds toward their goals, invite members to collaborate on shared goals, track contributions and savings progress, request withdrawals, and monitor transactions through a complete wallet and ledger system. The API also includes JWT authentication, role-based access control, rate limiting, AI-powered financial features, API documentation with Swagger/OpenAPI, and a background-ready architecture for notifications and asynchronous tasks.
 
 > 🚧 **Project Status:** Active Development
 
@@ -138,6 +137,8 @@ transaction.atomic()
 * Celery (planned)
 * drf-spectacular -  OpenAPI schema and Swagger API documentation      
 * Python Logging -  Application logging and error monitoring 
+* Groq API — LLM integration and AI-powered features
+
 
 ---
 
@@ -240,6 +241,16 @@ transaction.atomic()
 | Method | Endpoint                            | Description                 |
 | ------ | ----------------------------------- | --------------------------- |
 | GET    | `/api/docs`                  | Get Swagger doc View |
+
+
+---
+
+## Smart AI with Groq
+
+
+| Method | Endpoint                            | Description                 |
+| ------ | ----------------------------------- | --------------------------- |
+| POST   | `/api/goal/ai/plan-goal/`           | Generate a structured savings goal plan from a natural-language prompt |
 
 
 
