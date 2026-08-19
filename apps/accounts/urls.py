@@ -13,7 +13,6 @@ urlpatterns = [
 
     path('auth/profile/',views.my_profile, name='profile'),
 
-    path('auth/get_all_user/',views.get_users, name='profile'),
     
 
 

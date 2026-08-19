@@ -107,6 +107,36 @@ DATABASES = {
     }
 }
 
+# POSTGRES_PORT=config("POSTGRES_PORT")
+# POSTGRES_PASSWORD=config("POSTGRES_PASSWORD")
+# POSTGRES_DB=config("POSTGRES_DB")
+# POSTGRES_USER=config("POSTGRES_USER")
+
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': POSTGRES_DB,
+#         'USER': POSTGRES_USER,
+#         'PASSWORD':POSTGRES_PASSWORD,
+#         'HOST': config('POSTGRES_HOST'),
+#         'PORT': POSTGRES_PORT,
+#     }
+# }
+
+
+
+DATABASES = {
+    "default": {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": config("POSTGRES_DB"),
+        "USER": config("POSTGRES_USER"),
+        "PASSWORD": config("POSTGRES_PASSWORD"),
+        "HOST": config("POSTGRES_HOST", "localhost"),
+        "PORT": config("POSTGRES_PORT", "5432"),
+    }
+}
+
+
 
 # Password validation
 # https://docs.djangoproject.com/en/5.2/ref/settings/#auth-password-validators

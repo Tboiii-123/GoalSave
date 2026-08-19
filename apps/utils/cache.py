@@ -34,3 +34,35 @@ def get_or_set_cache(key, fetch_data, timeout=300):
         logger.exception("Cache SET failed for key=%s", key)
 
     return data
+
+
+
+# Inavlidate cache
+
+def invalidate_cache(key):
+    try:
+        cache.delete(key)
+        logger.info("Cache invalidated: %s", key)
+    except Exception:
+        logger.exception("Cache DELETE failed for key=%s", key)
+
+
+
+def invalidate_withdrawal_cache():
+    clear_cache_pattern("admin:withdrawals:*")
+
+
+
+
+def clear_cache_pattern(pattern):
+    try:
+        cache.delete_pattern(pattern)
+        logger.info(
+            "Cache pattern invalidated: %s",
+            pattern
+        )
+    except Exception:
+        logger.exception(
+            "Cache pattern DELETE failed: %s",
+            pattern
+        )

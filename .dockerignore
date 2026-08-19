@@ -1,0 +1,17 @@
+db.sqlite3
+note.txt
+prd.txt
+.env
+system_design.txt
+.gitignore
+venv
+advance_tips.txt
+
+venv/
+__pycache__/
+*.pyc
+.git/
+.gitignore
+.env
+db.sqlite3
+.pytest_cache/

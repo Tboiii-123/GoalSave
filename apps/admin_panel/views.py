@@ -16,6 +16,9 @@ from apps.accounts.models import User
 from .permissions import  IsSuperAdmin,IsFinanceAdmin,IsSupportAdmin
 from .serializers import AdminUserSerializer,RejectWithdrawalSerializer,WithdrawalApprovalResponseSerializer,AdminMessageSerializer
 
+from apps.utils.cache import get_or_set_cache,invalidate_cache,invalidate_withdrawal_cache
+
+
 from drf_spectacular.utils import (
     extend_schema,
     OpenApiParameter,
@@ -52,32 +55,45 @@ from drf_spectacular.utils import (
 @permission_classes([IsSuperAdmin])
 def list_withdrawals(request):
 
-    withdrawals = GoalWithdrawal.objects.select_related(
-        "user",
-        "goal"
-    ).order_by("-requested_at")
-
     status_filter = request.GET.get("status")
-
-    if status_filter:
-        withdrawals = withdrawals.filter(
-            status=status_filter.upper()
-        )
-
     user_id = request.GET.get("user")
 
-    if user_id:
-        withdrawals = withdrawals.filter(
-            user_id=user_id
-        )
-
-    serializer = GoalWithdrawalSerializer(
-        withdrawals,
-        many=True
+    cache_key = (
+        f"admin:withdrawals:"
+        f"status:{status_filter or 'all'}:"
+        f"user:{user_id or 'all'}"
     )
 
-    return Response(serializer.data)
+    def fetch_withdrawals():
+        withdrawals = GoalWithdrawal.objects.select_related(
+            "user",
+            "goal"
+        ).order_by("-requested_at")
 
+        if status_filter:
+            withdrawals = withdrawals.filter(
+                status=status_filter.upper()
+            )
+
+        if user_id:
+            withdrawals = withdrawals.filter(
+                user_id=user_id
+            )
+
+        serializer = GoalWithdrawalSerializer(
+            withdrawals,
+            many=True
+        )
+
+        return serializer.data
+
+    data = get_or_set_cache(
+        cache_key,
+        fetch_withdrawals,
+        timeout=300,
+    )
+
+    return Response(data)
 
 @extend_schema(
     tags=["Admin"],
@@ -170,6 +186,8 @@ def approve_withdrawal(request, pk):
             ]
         )
 
+        invalidate_withdrawal_cache()
+
     return Response(
         {
             "detail": "Withdrawal approved successfully.",
@@ -238,6 +256,8 @@ def reject_withdrawal(request, pk):
             ]
         )
 
+        invalidate_withdrawal_cache()
+
     return Response(
         {
             "detail": "Withdrawal rejected successfully."
@@ -282,18 +302,6 @@ def retrieve_admin_withdrawal(request, pk):
 
     return Response(serializer.data)
 
-
-
-
-# PATCH  /api/admin/withdrawals/<id>/reject/
-
-# GET    /api/admin/dashboard/
-
-# GET    /api/admin/deposits/
-
-
-
-#     POST   /api/admin/create-users/
 
 @extend_schema(
     tags=["Admin"],

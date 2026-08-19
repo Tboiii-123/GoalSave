@@ -16,6 +16,8 @@ from drf_spectacular.utils import (
     OpenApiExample,
 )
 
+from apps.utils.cache import get_or_set_cache,invalidate_cache
+
 
 @extend_schema(
     tags=["Analytics"],
@@ -29,57 +31,77 @@ from drf_spectacular.utils import (
 @permission_classes([IsAuthenticated])
 def goal_summary(request):
 
-    goals = SavingsGoal.objects.filter(user=request.user)
+    cache_key = f"analytics:goal_summary:{request.user.id}"
 
-    summary = goals.aggregate( total_goals=Count("id"),
+    def fetch_summary():
+        goals = SavingsGoal.objects.filter(
+            user=request.user
+        )
 
-        active_goals=Count(
-            "id",
-            filter=Q(status=GoalStatus.ACTIVE)
-        ),
+        summary = goals.aggregate(
+            total_goals=Count("id"),
 
-        completed_goals=Count(
-            "id",
-            filter=Q(status=GoalStatus.COMPLETED)
-        ),
+            active_goals=Count(
+                "id",
+                filter=Q(status=GoalStatus.ACTIVE)
+            ),
 
-        paused_goals=Count(
-            "id",
-            filter=Q(status=GoalStatus.PAUSED)
-        ),
+            completed_goals=Count(
+                "id",
+                filter=Q(status=GoalStatus.COMPLETED)
+            ),
 
-        cancelled_goals=Count(
-            "id",
-            filter=Q(status=GoalStatus.CANCELLED)
-        ),
+            paused_goals=Count(
+                "id",
+                filter=Q(status=GoalStatus.PAUSED)
+            ),
 
-        total_target_amount=Sum("target_amount"),
+            cancelled_goals=Count(
+                "id",
+                filter=Q(status=GoalStatus.CANCELLED)
+            ),
 
-        total_saved_amount=Sum("saved_amount"),
+            total_target_amount=Sum("target_amount"),
+
+            total_saved_amount=Sum("saved_amount"),
+        )
+
+        total_target = (
+            summary["total_target_amount"]
+            or Decimal("0.00")
+        )
+
+        total_saved = (
+            summary["total_saved_amount"]
+            or Decimal("0.00")
+        )
+
+        if total_target > 0:
+            overall_progress = round(
+                (total_saved / total_target) * 100,
+                2
+            )
+        else:
+            overall_progress = Decimal("0.00")
+
+        return {
+            "total_goals": summary["total_goals"],
+            "active_goals": summary["active_goals"],
+            "completed_goals": summary["completed_goals"],
+            "paused_goals": summary["paused_goals"],
+            "cancelled_goals": summary["cancelled_goals"],
+            "total_target_amount": total_target,
+            "total_saved_amount": total_saved,
+            "overall_progress_percentage": overall_progress,
+        }
+
+    data = get_or_set_cache(
+        cache_key,
+        fetch_summary,
+        timeout=300,
     )
 
-    total_target = summary["total_target_amount"] or Decimal("0.00")
-    total_saved = summary["total_saved_amount"] or Decimal("0.00")
-
-    if total_target > 0:
-        overall_progress = round(
-            (total_saved / total_target) * 100,
-            2
-        )
-    else:
-        overall_progress = Decimal("0.00")
-
-    return Response({
-        "total_goals": summary["total_goals"],
-        "active_goals": summary["active_goals"],
-        "completed_goals": summary["completed_goals"],
-        "paused_goals": summary["paused_goals"],
-        "cancelled_goals": summary["cancelled_goals"],
-        "total_target_amount": total_target,
-        "total_saved_amount": total_saved,
-        "overall_progress_percentage": overall_progress,
-    })
-
+    return Response(data)
 # GET /api/analytics/goals/?period=all
 
 @extend_schema(

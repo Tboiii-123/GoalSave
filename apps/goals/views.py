@@ -22,7 +22,7 @@ from drf_spectacular.utils import (
 )
 from django.utils import timezone
 from apps.utils.throttles import MessageThrottle,AiThrottle
-from apps.utils.cache import get_or_set_cache
+from apps.utils.cache import get_or_set_cache,invalidate_cache
 from apps.utils.ai import generate_smart_goal_plan
 
 @extend_schema(
@@ -66,11 +66,18 @@ def create_goal(request):
                 )
 
                 GoalShareActivity.objects.create(
-    goal=goal,
-    user=request.user,
-    activity_type=GoalShareActivityType.GOAL_CREATED,
-    message=f"{request.user.first_name} created the shared goal."
-)
+                        goal=goal,
+                        user=request.user,
+                        activity_type=GoalShareActivityType.GOAL_CREATED,
+                        message=f"{request.user.first_name} created the shared goal."
+
+                                )
+
+
+                # Invalidate user's goal list
+        invalidate_cache(
+            f"goals:{request.user.id}"
+        )
 
         return Response(
             SavingsGoalSerializer(goal).data,
@@ -132,24 +139,36 @@ def list_goals(request):
 @permission_classes([IsAuthenticated])
 @throttle_classes([MessageThrottle])
 def retrieve_goal(request, pk):
-    try:
-        goal = SavingsGoal.objects.select_related("owner").get(id=pk)
-    except SavingsGoal.DoesNotExist:
+
+    cache_key = f"goal:{request.user.id}:{pk}"
+
+    def fetch_goal():
+        try:
+            goal = SavingsGoal.objects.select_related("owner").get(
+                id=pk,
+                owner=request.user,
+            )
+        except SavingsGoal.DoesNotExist:
+            return None
+
+        return SavingsGoalSerializer(
+            goal,
+            context={"request": request},
+        ).data
+
+    data = get_or_set_cache(
+        key=cache_key,
+        fetch_data=fetch_goal,
+        timeout=300,
+    )
+
+    if data is None:
         return Response(
             {"detail": "Goal not found."},
-            status=status.HTTP_404_NOT_FOUND
+            status=status.HTTP_404_NOT_FOUND,
         )
 
-    if goal.owner != request.user:
-        return Response(
-            {"detail": "Only the owner can access this goal."},
-            status=status.HTTP_403_FORBIDDEN
-        )
-
-    serializer = SavingsGoalSerializer(goal)
-
-    return Response(serializer.data)
-
+    return Response(data)
 
 
 
@@ -209,6 +228,16 @@ def delete_goal(request, pk):
 
     goal.delete()
 
+     # Invalidate goal list
+    invalidate_cache(
+        f"goals:{request.user.id}"
+    )
+
+    # Invalidate individual goal
+    invalidate_cache(
+        f"goal:{request.user.id}:{pk}"
+    )
+
     return Response(
         {"detail": "Goal deleted successfully."},
           status=status.HTTP_200_OK
@@ -250,6 +279,16 @@ def pause_goal(request, pk):
     goal.status = GoalStatus.PAUSED
     goal.save(update_fields=["status"])
 
+     # Invalidate goal list
+    invalidate_cache(
+        f"goals:{request.user.id}"
+    )
+
+    # Invalidate individual goal
+    invalidate_cache(
+        f"goal:{request.user.id}:{pk}"
+    )
+
     return Response({"detail": "Goal paused successfully."})
 
 
@@ -285,6 +324,16 @@ def resume_goal(request, pk):
 
     goal.status = GoalStatus.ACTIVE
     goal.save(update_fields=["status"])
+
+     # Invalidate goal list
+    invalidate_cache(
+        f"goals:{request.user.id}"
+    )
+
+    # Invalidate individual goal
+    invalidate_cache(
+        f"goal:{request.user.id}:{pk}"
+    )
 
     return Response({"detail": "Goal resumed successfully."})
 
@@ -498,6 +547,15 @@ def fund_goal(request, pk):
             description=f"Transfer to savings goal: {goal.name}"
         )
 
+        invalidate_cache(
+            f"goals:{request.user.id}"
+        )
+
+        invalidate_cache(
+        f"goal:{request.user.id}:{pk}"
+    )
+
+
     return Response(
         {
             "message": "Goal funded successfully.",
@@ -701,14 +759,19 @@ def accept_goal_invitation(request, token):
         )
 
         GoalShareActivity.objects.create(
-    goal=invitation.goal,
-    user=request.user,
-    activity_type=GoalShareActivityType.MEMBER_JOINED,
-    message=f"{request.user.first_name} joined the goal."
-)
+                goal=invitation.goal,
+                user=request.user,
+                activity_type=GoalShareActivityType.MEMBER_JOINED,
+                message=f"{request.user.first_name} joined the goal."
+                
+                )
 
         invitation.status = InvitationStatus.ACCEPTED
         invitation.save(update_fields=["status"])
+
+        invalidate_cache(
+    f"goal_members:{request.user.id}:{invitation.goal.id}"
+        )
 
     return Response(
         {
@@ -743,7 +806,6 @@ def accept_goal_invitation(request, token):
 )
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
-
 def decline_goal_invitation(request, token):
     try:
         invitation = GoalInvitation.objects.get(token=token)
@@ -807,35 +869,50 @@ def decline_goal_invitation(request, token):
 @permission_classes([IsAuthenticated])
 @throttle_classes([MessageThrottle])
 def goal_members(request, pk):
-    try:
-        goal = SavingsGoal.objects.get(pk=pk)
 
-    except SavingsGoal.DoesNotExist:
+    cache_key = f"goal_members:{request.user.id}:{pk}"
+
+    def fetch_members():
+
+        try:
+            goal = SavingsGoal.objects.get(pk=pk)
+        except SavingsGoal.DoesNotExist:
+            return None
+
+        # Check that the requesting user is a member
+        if not GoalMember.objects.filter(
+            goal=goal,
+            user=request.user,
+        ).exists():
+            return "FORBIDDEN"
+
+        members = (
+            GoalMember.objects
+            .filter(goal=goal)
+            .select_related("user")
+            .order_by("joined_at")
+        )
+
+        return GoalMemberSerializer(
+            members,
+            many=True,
+        ).data
+
+    data = get_or_set_cache(key=cache_key,fetch_data=fetch_members,timeout=300, )
+
+    if data is None:
         return Response(
             {"detail": "Goal not found."},
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    if not GoalMember.objects.filter(
-        goal=goal,
-        owner=request.user,
-    ).exists():
+    if data == "FORBIDDEN":
         return Response(
             {"detail": "You are not a member of this goal."},
             status=status.HTTP_403_FORBIDDEN,
         )
 
-    members = (
-        GoalMember.objects
-        .filter(goal=goal)
-        .select_related("owner")
-        .order_by("joined_at")
-    )
-
-    serializer = GoalMemberSerializer(members, many=True)
-
-    return Response(serializer.data)
-
+    return Response(data)
 
 @extend_schema(
     tags=["Goal Members"],
@@ -888,6 +965,10 @@ def remove_goal_member(request, goal_id, member_id):
         )
 
     member.delete()
+
+    invalidate_cache(
+    f"goal_members:{request.user.id}:{goal.id}"
+)
 
     GoalShareActivity.objects.create(
     goal=goal,
@@ -1053,6 +1134,9 @@ def leave_shared_goal(request, pk):
         )
 
     member.delete()
+    invalidate_cache(
+    f"goal_members:{request.user.id}:{goal.id}"
+)
 
     return Response(
         {
