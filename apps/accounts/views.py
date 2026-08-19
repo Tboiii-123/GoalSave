@@ -47,25 +47,6 @@ def register_view(request):
     }, status=400)
 
 
-
-@extend_schema(
-    tags=["Authentication"],
-    summary="List users",
-    description="Returns all registered users.",
-    responses={
-        200: UserSerializer(many=True),
-    },
-)
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-@throttle_classes([MessageThrottle])
-def get_users(request):
-    users = User.objects.select_related("profile").all()
-    serializer = UserSerializer(users, many=True)
-    return Response(serializer.data)
-
-
-
 @extend_schema(
     methods=["GET"],
     tags=["Authentication"],
@@ -101,7 +82,7 @@ def my_profile(request):
         },
         )
 
-    serializer = User(
+    serializer = UserSerializer(
         profile,
         data=request.data,
         partial=True
