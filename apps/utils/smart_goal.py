@@ -1,17 +1,12 @@
 from datetime import date
-import json
 
-from django.conf import settings
-from groq import Groq
+from .llm import generate_llm_response
 
 
-client = Groq(api_key=settings.GROQ_API_KEY)
-
-
-def generate_smart_goal_plan(prompt):
+def generate_smart_goal_plan(prompt: str):
 
     today = date.today().isoformat()
-    
+
     system_prompt = f"""
 You are a Smart Goal Planner for a savings application.
 
@@ -67,22 +62,11 @@ Rules:
 12. Return JSON only.
 
 13. Do not add any fields.
-
-User message:
-{prompt}
 """
-    response = client.chat.completions.create(
-   model="openai/gpt-oss-120b",
-        messages=[
-            {
-                "role": "system",
-                "content": system_prompt,
-            }
-        ],
+
+    return generate_llm_response(
+        system_prompt=system_prompt,
+        user_prompt=prompt,
         temperature=0,
-        response_format={"type": "json_object"},
+        json_mode=True,
     )
-
-    content = response.choices[0].message.content
-
-    return json.loads(content)

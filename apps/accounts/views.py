@@ -94,7 +94,7 @@ def my_profile(request):
     return Response(
         {
             "message": "Profile updated successfully.",
-            "profile": serializer.data
+            "data": serializer.data
         },
         status=status.HTTP_200_OK
     )

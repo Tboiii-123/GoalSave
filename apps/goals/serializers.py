@@ -179,3 +179,24 @@ class SmartGoalPlanSerializer(serializers.Serializer):
             )
 
         return value
+
+
+
+class FinancialCoachRequestSerializer(serializers.Serializer):
+    question = serializers.CharField(
+        required=True,
+        allow_blank=False,
+        trim_whitespace=True,
+        help_text=(
+            "Financial question you want the AI Financial Coach "
+            "to answer."
+        ),
+    )
+
+
+class FinancialCoachResponseSerializer(serializers.Serializer):
+    question = serializers.CharField()
+    answer = serializers.CharField()
+
+
+

@@ -123,6 +123,34 @@ transaction.atomic()
 ---
 
 
+# AI Financial service LLm Integration
+                   GOAL AI
+                      │
+          ┌───────────┴───────────┐
+          │                       │
+       RETRIEVAL             CALCULATION
+          │                       │
+          ▼                       ▼
+   Database Data          Python Backend Logic
+          │                       │
+          ├── Goal                ├── Remaining
+          ├── Wallet              ├── Progress
+          └── Fundings            ├── Weekly Target
+                                  ├── Monthly Target
+                                  └── Saving Pace
+                       │
+                       ▼
+                  AI CONTEXT
+                       │
+                       ▼
+                    GROQ LLM
+                       │
+                       ▼
+                 AI RESPONSE
+```
+---
+
+
 
 # Tech Stack
 
@@ -251,7 +279,9 @@ transaction.atomic()
 | Method | Endpoint                            | Description                 |
 | ------ | ----------------------------------- | --------------------------- |
 | POST   | `/api/goal/ai/plan-goal/`           | Generate a structured savings goal plan from a natural-language prompt |
+| POST   | `/api/goal/goals/goal_id/ai/`        | Generate a structured savings goal plan from a natural-language prompt for personal goal |
 
+api/goal/goals/2/ai/
 
 
 
