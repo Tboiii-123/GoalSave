@@ -20,58 +20,38 @@ urlpatterns = [
 
       # Invitations
     path(
-        "<int:pk>/invite/",
-        views.invite_goal_member,
-        name="invite-goal-member",
-    ),
+        "<int:pk>/invite/",views.invite_goal_member,name="invite-goal-member"),
 
     path(
-        "invitations/<uuid:token>/accept/",
-        views.accept_goal_invitation,
-        name="accept-goal-invitation",
-    ),
+        "invitations/<uuid:token>/accept/",views.accept_goal_invitation,name="accept-goal-invitation"),
 
     path(
-        "invitations/<uuid:token>/decline/",
-        views.decline_goal_invitation,
-        name="decline-goal-invitation",
-    ),
+        "invitations/<uuid:token>/decline/",views.decline_goal_invitation,name="decline-goal-invitation"),
 
     path(
-        "invitations/",
-        views.my_goal_invitations,
-        name="my-goal-invitations",
-    ),
+        "invitations/",views.my_goal_invitations,name="my-goal-invitations"),
 
     # Members
     path(
-        "<int:pk>/members/",
-        views.goal_members,
-        name="goal-members",
-    ),
+        "<int:pk>/members/",views.goal_members,name="goal-members"),
 
     path(
-        "<int:goal_id>/members/<int:member_id>/remove/",
-        views.remove_goal_member,
-        name="remove-goal-member",
-    ),
+        "<int:goal_id>/members/<int:member_id>/remove/",views.remove_goal_member,name="remove-goal-member"),
 
     path(
-        "<int:pk>/leave/",
-        views.leave_shared_goal,
-        name="leave-shared-goal",
-    ),
+        "<int:pk>/leave/",views.leave_shared_goal,name="leave-shared-goal"),
 
     # Contributions
     path(
-        "<int:pk>/contributions/",
-        views.goal_contributions,
-        name="goal-contributions",
-    ),
+        "<int:pk>/contributions/",views.goal_contributions,name="goal-contributions"),
 
      path(
-        "ai/plan-goal/",
-        views.smart_goal_planner,
-        name="smart-goal-planner",
-    ),
+        "ai/plan-goal/",views.smart_goal_planner,name="smart-goal-planner"),
+
+    #AI FIniancial Coach
+    path(
+        "financial-coach/",views.financial_coach,name="financial-coach"),
+    #AI Personal Goal Financial Coach
+       path("goals/<int:goal_id>/ai/", views.goal_ai,name="goal-ai"),
+
 ]

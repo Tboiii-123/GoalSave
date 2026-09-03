@@ -6,7 +6,7 @@ from rest_framework import status
 from .models import SavingsGoal, GoalStatus,GoalMember,GoalMemberStatus,GoalRole,GoalInvitation,InvitationStatus,GoalShareActivity,GoalShareActivityType
 from .serializers import (SavingsGoalSerializer,GoalFundingSerializer,GoalInvitationSerializer,
 GoalMemberSerializer,GoalInvitationListSerializer,GoalContributionSerializer,MessageSerializer
-,GoalInvitationResponseSerializer,SmartGoalPlannerSerializer,SmartGoalPlanSerializer)
+,GoalInvitationResponseSerializer,SmartGoalPlannerSerializer,SmartGoalPlanSerializer,FinancialCoachResponseSerializer,FinancialCoachRequestSerializer)
 from django.db import transaction
 from apps.wallet.models import Wallet, WalletTransaction
 from apps.ledger.models import (LedgerEntry,LedgerEntryType,LedgerTransactionType)
@@ -23,7 +23,12 @@ from drf_spectacular.utils import (
 from django.utils import timezone
 from apps.utils.throttles import MessageThrottle,AiThrottle
 from apps.utils.cache import get_or_set_cache,invalidate_cache
-from apps.utils.ai import generate_smart_goal_plan
+from apps.utils.smart_goal import generate_smart_goal_plan
+from apps.utils.financial_context import build_financial_context,select_relevant_financial_context,detect_financial_intent
+from apps.utils.financial_coach import (
+    generate_financial_coach_response, 
+)
+from apps.utils.goal_financial_coach import generate_goal_ai_response
 
 @extend_schema(
     tags=["Goals"],
@@ -182,14 +187,6 @@ def retrieve_goal(request, pk):
         "Deletes a savings goal. "
         "A goal cannot be deleted if it contains saved funds."
     ),
-    parameters=[
-        OpenApiParameter(
-            name="pk",
-            type=str,
-            location=OpenApiParameter.PATH,
-            description="Savings Goal UUID",
-        )
-    ],
     request=None,
     responses={
         200: MessageSerializer,
@@ -1200,5 +1197,184 @@ def smart_goal_planner(request):
 
     return Response(
         plan_serializer.validated_data,
+        status=status.HTTP_200_OK,
+    )
+
+
+
+
+@extend_schema(
+    request=FinancialCoachRequestSerializer,
+    responses={
+        200: FinancialCoachResponseSerializer,
+    },
+    tags=["AI Coach"],
+    summary="Ask the AI Financial Coach",
+    description=(
+        "Provides personalized financial guidance based on "
+        "the authenticated user's wallet balance, savings goals, "
+        "transaction history, and calculated saving patterns."
+    ),
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def financial_coach(request):
+
+    # -----------------------------
+    # 1. Validate request
+    # -----------------------------
+
+    serializer = FinancialCoachRequestSerializer(
+        data=request.data
+    )
+
+    serializer.is_valid(
+        raise_exception=True
+    )
+
+    question = serializer.validated_data["question"]
+
+    # -----------------------------
+    # 2. Build financial context
+    # -----------------------------
+
+    financial_context = build_financial_context(
+        request.user
+    )
+
+    # -----------------------------
+    # 3. Detect question intent
+    # -----------------------------
+
+    intent = detect_financial_intent(
+        question
+    )
+
+    # -----------------------------
+    # 4. Select relevant context
+    # -----------------------------
+
+    selected_context = (
+        select_relevant_financial_context(
+            question=question,
+            financial_context=financial_context,
+        )
+    )
+
+    # -----------------------------
+    # 5. Handle clarification
+    # -----------------------------
+
+    if selected_context["needs_clarification"]:
+
+        response_serializer = (
+            FinancialCoachResponseSerializer(
+                {
+                    "question": question,
+                    "answer": selected_context[
+                        "clarification"
+                    ],
+                }
+            )
+        )
+
+        return Response(
+            response_serializer.data,
+            status=status.HTTP_200_OK,
+        )
+
+    # -----------------------------
+    # 6. Generate AI response
+    # -----------------------------
+
+    answer = generate_financial_coach_response(
+        question=question,
+
+        financial_context=(
+            selected_context["context"]
+        ),
+
+        intent=(
+            selected_context["intent"]
+        ),
+    )
+
+    # -----------------------------
+    # 7. Serialize response
+    # -----------------------------
+
+    response_serializer = (
+        FinancialCoachResponseSerializer(
+            {
+                "question": question,
+                "answer": answer,
+            }
+        )
+    )
+
+    # -----------------------------
+    # 8. Return response
+    # -----------------------------
+
+    return Response(
+        response_serializer.data,
+        status=status.HTTP_200_OK,
+    )
+
+
+
+
+
+@extend_schema(
+    request=FinancialCoachRequestSerializer,
+    responses={
+        200: FinancialCoachResponseSerializer,
+    },
+    tags=["AI Coach"],
+    summary="Ask the AI about a savings goal",
+    description=(
+        "Provides personalized AI guidance for a specific savings goal "
+        "belonging to the authenticated user. The AI uses the selected "
+        "goal's details, wallet balance, and goal funding history."
+    ),
+)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def goal_ai(request, goal_id):
+
+    serializer = FinancialCoachRequestSerializer(
+        data=request.data
+    )
+
+    serializer.is_valid(raise_exception=True)
+
+    goal = SavingsGoal.objects.filter(
+        id=goal_id,
+        owner=request.user,
+    ).first()
+
+    if not goal:
+        return Response(
+            {
+                "message": "Goal not found."
+            },
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    response = generate_goal_ai_response(
+        question=serializer.validated_data["question"],
+        user=request.user,
+        goal=goal,
+    )
+
+    return Response(
+        {
+            "message": "Goal AI response generated successfully.",
+            "goal": {
+                "id": goal.id,
+                "name": goal.name,
+            },
+            "response": response,
+        },
         status=status.HTTP_200_OK,
     )
