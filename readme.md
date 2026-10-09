@@ -45,6 +45,28 @@ It enables users to create and manage personal and shared savings goals, securel
 * Signature verification
 * Atomic wallet crediting
 
+### Shared Savings Goals
+* Invite users to collaborate on savings goals
+* Email notifications for goal invitations
+* In-app notification indicators for pending invitations
+* View and manage goal invitations
+* Accept goal invitations
+* Decline goal invitations
+* Goal membership and role management
+* Support for owner, contributor, and viewer roles
+* Invitation status tracking
+
+## Notifications
+* Email notifications for goal invitations
+* Notification indicators for incoming invitations
+* Invitation status updates when invitations are accepted or declined
+
+## Background Tasks
+* Celery integration for asynchronous task processing
+* Redis message broker integration (where configured)
+* Background processing for supported tasks, including email notifications
+
+
 ---
 
 # Payment Flow
@@ -124,6 +146,9 @@ transaction.atomic()
 
 
 # AI Financial service LLm Integration
+
+
+```text
                    GOAL AI
                       │
           ┌───────────┴───────────┐

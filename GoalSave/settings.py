@@ -272,3 +272,31 @@ LOGGING = {
 
 
 GROQ_API_KEY = config("GROQ_API_KEY")
+
+
+
+
+#Celery Integration
+
+CELERY_BROKER_URL =config("REDIS_URL")
+
+CELERY_TASK_SERIALIZER = "json"
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_RESULT_SERIALIZER = "json"
+CELERY_TIMEZONE = "Africa/Lagos"
+CELERY_TASK_TRACK_STARTED = True
+
+
+
+EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend"
+EMAIL_HOST = "smtp.gmail.com"
+EMAIL_PORT = 587
+EMAIL_USE_TLS = True
+EMAIL_HOST_USER = config("EMAIL_HOST")
+EMAIL_HOST_PASSWORD =config("EMAIL_PASSWORD")
+DEFAULT_FROM_EMAIL = EMAIL_HOST_USER
+
+GOALSAVE_BACKEND_URL = config(
+    "GOALSAVE_BACKEND_URL",
+    default="http://127.0.0.1:8000",
+)

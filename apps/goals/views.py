@@ -29,6 +29,9 @@ from apps.utils.financial_coach import (
     generate_financial_coach_response, 
 )
 from apps.utils.goal_financial_coach import generate_goal_ai_response
+from apps.goals.tasks import send_goal_funding_notification
+
+from apps.goals.tasks import send_goal_invitation_email
 
 @extend_schema(
     tags=["Goals"],
@@ -552,6 +555,18 @@ def fund_goal(request, pk):
         f"goal:{request.user.id}:{pk}"
     )
 
+    
+        # Queue the email only after the financial transaction commits.
+        transaction.on_commit(
+            lambda: send_goal_funding_notification.delay(
+                goal_id=goal.pk,
+                contributor_email=request.user.email,
+                amount=str(amount),
+                reference=reference,
+            ),
+            robust=True,
+        )
+
 
     return Response(
         {
@@ -651,24 +666,15 @@ def invite_goal_member(request, pk):
         )
 
 
-
-        # TODO
-        # If email belongs to a registered user:
-        #   create notification
-        #
-        # Else:
-        #   send signup email
-        #
-        # In both cases send an invitation email containing:
-        # https://goalsave.app/invitations/{invitation.token}
+    transaction.on_commit(
+        lambda: send_goal_invitation_email.delay(invitation.pk),
+        robust=True,
+    )
 
     return Response(
-        {
-            "message": "Invitation sent successfully.",
-            "token": str(invitation.token),   # remove this in production
-        },
-        status=status.HTTP_201_CREATED,
-    )
+    {"message": "Invitation created successfully. An email will be sent shortly."},
+    status=status.HTTP_201_CREATED,
+)
 
 
 
@@ -879,14 +885,14 @@ def goal_members(request, pk):
         # Check that the requesting user is a member
         if not GoalMember.objects.filter(
             goal=goal,
-            user=request.user,
+            owner=request.user,
         ).exists():
             return "FORBIDDEN"
 
         members = (
             GoalMember.objects
             .filter(goal=goal)
-            .select_related("user")
+            .select_related("owner")
             .order_by("joined_at")
         )
 
