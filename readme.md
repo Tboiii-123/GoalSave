@@ -288,6 +288,22 @@ transaction.atomic()
 
 ---
 
+
+## Notifications
+
+| Method | Endpoint | Description |
+| ------ | -------- | ----------- |
+| GET | `/api/notifications/` | Get the authenticated user's notifications. Supports `unread`, `limit`, and `offset` query parameters. |
+| GET | `/api/notifications/unread-count/` | Get the number of unread notifications. |
+| PATCH | `/api/notifications/read-all/` | Mark all the authenticated user's notifications as read. |
+| PATCH | `/api/notifications/{notification_id}/read/` | Mark a specific notification as read. |
+| DELETE | `/api/notifications/{notification_id}/` | Delete a specific notification. |
+
+
+
+---
+
+
 ## Swagger doc
 
 
@@ -329,67 +345,78 @@ POST /api/goal/
 
 # Installation
 
-Clone the repository
+
+## How to Run the Project
+
+### 1. Clone the Repository
 
 ```bash
 git clone https://github.com/Tboiii-123/GoalSave.git
+cd GoalSave
 ```
 
-Move into the project
+### 2. Configure Environment Variables
+
+Create a `.env` file in the project root and add the required environment variables.
+
+Use `.env.example` as a reference if available.
+
+### 3. Build and Start the Application
+
+Run the following command to build the Docker images and start the application services:
 
 ```bash
-cd goalsave
+docker compose up --build
 ```
 
-Create a virtual environment
+This starts the services defined in `docker-compose.yml`, including the Django application, PostgreSQL database, Redis, and Celery worker, if configured.
+
+### 4. Access the Application
+
+Once the services are running, open:
+
+- **API:** http://localhost:8000/
+- **API Documentation (Swagger):** http://localhost:8000/api/docs/
+- **API Schema:** http://localhost:8000/api/schema/
+
+*The URLs depend on your `docker-compose.yml` and URL configuration.*
+
+### 5. Run Database Migrations Manually (If Needed)
+
+If migrations are not applied automatically when the container starts, run:
 
 ```bash
-python -m venv venv
+docker compose exec web python manage.py migrate
 ```
 
-Activate the virtual environment
+Replace `web` with the Django service name defined in your `docker-compose.yml` if different.
 
-Windows
+### 6. Stop the Application
+
+Press `Ctrl + C`, or run:
 
 ```bash
-venv\Scripts\activate
+docker compose down
 ```
 
-Linux/macOS
+To stop the containers and remove the containers and default network while **preserving database data in named volumes**, use the command above. To remove the volumes as well, use:
 
 ```bash
-source venv/bin/activate
+docker compose down -v
 ```
 
-Install dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-Run migrations
-
-```bash
-python manage.py migrate
-```
-
-Start the server
-
-```bash
-python manage.py runserver
-```
-
+**Warning:** `docker compose down -v` deletes the Compose-managed database volumes and can permanently remove your local database data.
 ---
 
 # Future Improvements
 
 * Scheduled savings
-* Email notifications
-* Redis caching
-* Celery background tasks
-* Docker deployment
+* Email notifications  --done
+* Redis caching   --done
+* Celery background tasks  --done
+* Docker deployment        --done
 * CI/CD pipeline
-* Unit and integration tests
+* Unit and integration tests      --processing
 
 ---
 

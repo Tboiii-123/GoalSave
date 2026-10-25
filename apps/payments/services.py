@@ -20,6 +20,9 @@ from drf_spectacular.utils import (
     OpenApiExample,
 )
 
+from apps.notifications.services import create_notification
+from apps.notifications.models import Notification
+
 
 
 PAYSTACK_INIT_URL = "https://api.paystack.co/transaction/initialize"
@@ -232,6 +235,16 @@ def paystack_webhook(request):
             balance_after=balance_after,
             description="Wallet credited via Paystack deposit"
             
+)
+
+        create_notification(
+                user=deposit.user,
+                notification_type=Notification.Type.DEPOSIT_SUCCESS,
+                title="Deposit successful",
+                message=f"Your deposit of ₦{deposit.amount:,.2f} was successful.",
+                data={"reference": deposit.reference},
+                event_key=f"deposit-success:{deposit.reference}",
+                
 )
 
     return Response(

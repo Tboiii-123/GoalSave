@@ -17,6 +17,7 @@ from drf_spectacular.utils import (
     OpenApiExample,
 )
 
+from apps.notifications.services import create_notification
 
 
 

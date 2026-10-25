@@ -37,6 +37,7 @@ urlpatterns = [
     path("api/withdrawals/", include("apps.withdrawal.urls")),
     path("api/admin/", include("apps.admin_panel.urls")),
     path("api/withdrawal/", include("apps.withdrawal.urls")),
+    path(  "api/notifications/",include("apps.notifications.urls")),
     
      # Swagger
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),

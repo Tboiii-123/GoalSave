@@ -6,6 +6,7 @@ system_design.txt
 .gitignore
 venv
 advance_tips.txt
+.env.docker
 
 venv/
 __pycache__/

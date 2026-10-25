@@ -1,8 +1,11 @@
+
 services:
   web:
     build: .
     container_name: goalsave_web
-    command: python manage.py runserver 0.0.0.0:8000
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py runserver 0.0.0.0:8000"
     volumes:
       - .:/app
     ports:
@@ -14,6 +17,20 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+  celery:
+    build: .
+    container_name: goalsave_celery
+    command: celery -A GoalSave worker --loglevel=info
+    volumes:
+      - .:/app
+    env_file:
+      - .env.docker
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
 
   db:
     image: postgres:16
