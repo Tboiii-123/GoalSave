@@ -17,7 +17,8 @@ from .permissions import  IsSuperAdmin,IsFinanceAdmin,IsSupportAdmin
 from .serializers import AdminUserSerializer,RejectWithdrawalSerializer,WithdrawalApprovalResponseSerializer,AdminMessageSerializer
 
 from apps.utils.cache import get_or_set_cache,invalidate_cache,invalidate_withdrawal_cache
-
+from apps.notifications.models import Notification
+from apps.notifications.services import create_notification
 
 from drf_spectacular.utils import (
     extend_schema,
@@ -95,10 +96,15 @@ def list_withdrawals(request):
 
     return Response(data)
 
+
 @extend_schema(
     tags=["Admin"],
     summary="Approve a withdrawal",
-    description="Approves a pending withdrawal request, debits the savings goal, records a ledger entry, and marks the withdrawal as successful.",
+    description=(
+        "Approves a pending withdrawal, debits the savings goal, "
+        "records a ledger entry, marks the withdrawal successful, "
+        "and notifies the requesting user."
+    ),
     parameters=[
         OpenApiParameter(
             name="pk",
@@ -117,50 +123,41 @@ def list_withdrawals(request):
 @api_view(["PATCH"])
 @permission_classes([IsSuperAdmin])
 def approve_withdrawal(request, pk):
-
     with transaction.atomic():
-
         # Lock withdrawal row
         withdrawal = get_object_or_404(
             GoalWithdrawal.objects.select_for_update(),
-            pk=pk
+            pk=pk,
         )
 
-        # Already processed?
         if withdrawal.status != WithdrawalStatus.PENDING:
             return Response(
-                {
-                    "detail": "Withdrawal has already been processed."
-                },
-                status=status.HTTP_400_BAD_REQUEST
+                {"detail": "Withdrawal has already been processed."},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         # Lock goal row
         goal = SavingsGoal.objects.select_for_update().get(
-            id=withdrawal.goal.id
+            id=withdrawal.goal_id,
         )
 
-        # Lock wallet row (needed for ledger)
+        # Lock wallet row
         wallet = Wallet.objects.select_for_update().get(
-            user=withdrawal.user
+            user=withdrawal.user,
         )
 
         # Safety check
         if withdrawal.amount > goal.saved_amount:
             return Response(
-                {
-                    "detail": "Insufficient goal balance."
-                },
-                status=status.HTTP_400_BAD_REQUEST
+                {"detail": "Insufficient goal balance."},
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         balance_before = goal.saved_amount
 
         # Debit goal
         goal.saved_amount -= withdrawal.amount
-        goal.save(
-            update_fields=["saved_amount"]
-        )
+        goal.save(update_fields=["saved_amount"])
 
         balance_after = goal.saved_amount
 
@@ -173,40 +170,66 @@ def approve_withdrawal(request, pk):
             amount=withdrawal.amount,
             balance_before=balance_before,
             balance_after=balance_after,
-            description="Withdrawal approved and paid to customer's bank account."
+            description=(
+                "Withdrawal approved and paid to customer's bank account."
+            ),
         )
 
         # Mark withdrawal as successful
         withdrawal.status = WithdrawalStatus.SUCCESS
         withdrawal.processed_at = timezone.now()
         withdrawal.save(
-            update_fields=[
-                "status",
-                "processed_at"
-            ]
+            update_fields=["status", "processed_at"],
         )
 
-        invalidate_withdrawal_cache()
+        # Notify the requesting user
+        create_notification(
+            user=withdrawal.user,
+            notification_type=Notification.Type.WITHDRAWAL_UPDATE,
+            title="Withdrawal successful",
+            message=(
+                f"Your withdrawal of ₦{withdrawal.amount:,.2f} "
+                "has been approved and processed successfully."
+            ),
+            data={
+                "withdrawal_id": str(withdrawal.pk),
+                "reference": withdrawal.reference,
+                "amount": str(withdrawal.amount),
+                "status": withdrawal.status,
+                "goal_id": str(goal.pk),
+                "goal_name": goal.name,
+                "goal_balance": str(goal.saved_amount),
+            },
+            event_key=f"withdrawal-success:{withdrawal.pk}",
+        )
+
+        # Invalidate cache after commit
+        transaction.on_commit(
+            invalidate_withdrawal_cache,
+            robust=True,
+        )
 
     return Response(
         {
             "detail": "Withdrawal approved successfully.",
             "reference": withdrawal.reference,
-            "status": withdrawal.status
+            "status": withdrawal.status,
         },
-        status=status.HTTP_200_OK
+        status=status.HTTP_200_OK,
     )
 
 
 
-
-
 #Reject withdrwal
+
 @extend_schema(
     tags=["Admin"],
     summary="Reject a withdrawal",
-    description="Rejects a pending withdrawal request and optionally stores admin remarks.",
-     request=RejectWithdrawalSerializer,
+    description=(
+        "Rejects a pending withdrawal request, optionally stores admin "
+        "remarks, and notifies the requesting user."
+    ),
+    request=RejectWithdrawalSerializer,
     parameters=[
         OpenApiParameter(
             name="pk",
@@ -216,33 +239,36 @@ def approve_withdrawal(request, pk):
         ),
     ],
     responses={
-        200: OpenApiResponse(description="Withdrawal rejected successfully"),
-        400: OpenApiResponse(description="Withdrawal already processed"),
-        404: OpenApiResponse(description="Withdrawal not found"),
+        200: OpenApiResponse(
+            description="Withdrawal rejected successfully"
+        ),
+        400: OpenApiResponse(
+            description="Withdrawal already processed"
+        ),
+        404: OpenApiResponse(
+            description="Withdrawal not found"
+        ),
     },
 )
 @api_view(["PATCH"])
 @permission_classes([IsSuperAdmin])
 def reject_withdrawal(request, pk):
+    serializer = RejectWithdrawalSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+
+    remarks = serializer.validated_data.get("remarks", "")
 
     with transaction.atomic():
-
         withdrawal = get_object_or_404(
             GoalWithdrawal.objects.select_for_update(),
-            pk=pk
+            pk=pk,
         )
 
         if withdrawal.status != WithdrawalStatus.PENDING:
             return Response(
-                {
-                    "detail": "Withdrawal has already been processed."
-                },
-                status=status.HTTP_400_BAD_REQUEST
+                {"detail": "Withdrawal has already been processed."},
+                status=status.HTTP_400_BAD_REQUEST,
             )
-
-        remarks = request.data.get("remarks")
-
-       
 
         withdrawal.status = WithdrawalStatus.REJECTED
         withdrawal.remarks = remarks
@@ -252,18 +278,39 @@ def reject_withdrawal(request, pk):
             update_fields=[
                 "status",
                 "remarks",
-                "processed_at"
+                "processed_at",
             ]
         )
 
-        invalidate_withdrawal_cache()
+        create_notification(
+            user=withdrawal.user,
+            notification_type=Notification.Type.WITHDRAWAL_UPDATE,
+            title="Withdrawal request rejected",
+            message=(
+                f"Your withdrawal request for "
+                f"₦{withdrawal.amount:,.2f} has been rejected."
+                + (f" Reason: {remarks}" if remarks else "")
+            ),
+            data={
+                "withdrawal_id": str(withdrawal.pk),
+                "reference": withdrawal.reference,
+                "amount": str(withdrawal.amount),
+                "status": withdrawal.status,
+                "remarks": remarks,
+            },
+            event_key=f"withdrawal-rejected:{withdrawal.pk}",
+        )
+
+        transaction.on_commit(
+            invalidate_withdrawal_cache,
+            robust=True,
+        )
 
     return Response(
-        {
-            "detail": "Withdrawal rejected successfully."
-        },
-        status=status.HTTP_200_OK
+        {"detail": "Withdrawal rejected successfully."},
+        status=status.HTTP_200_OK,
     )
+
 
 
 #Get a simgle withdrawal

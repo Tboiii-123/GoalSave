@@ -32,6 +32,8 @@ from apps.utils.goal_financial_coach import generate_goal_ai_response
 from apps.goals.tasks import send_goal_funding_notification
 
 from apps.goals.tasks import send_goal_invitation_email
+from apps.notifications.models import Notification
+from apps.notifications.services import create_notification
 
 @extend_schema(
     tags=["Goals"],
@@ -400,23 +402,23 @@ def complete_goal(request, pk):
         ),
     ],
 )
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 @throttle_classes([MessageThrottle])
 def fund_goal(request, pk):
-
     serializer = GoalFundingSerializer(data=request.data)
 
     if not serializer.is_valid():
         return Response(
             serializer.errors,
-            status=status.HTTP_400_BAD_REQUEST
+            status=status.HTTP_400_BAD_REQUEST,
         )
 
     amount = serializer.validated_data["amount"]
 
     with transaction.atomic():
-
         wallet = Wallet.objects.select_for_update().get(
             user=request.user
         )
@@ -426,104 +428,88 @@ def fund_goal(request, pk):
             id=pk,
         )
 
-        # ===========================
-        # Permission Checks
-        # ===========================
-
+        # Permission checks
         if goal.is_shared:
-
             member = GoalMember.objects.filter(
                 goal=goal,
-                user=request.user,
+                user=request.user,  # Match this to your actual model field.
             ).first()
 
             if not member:
                 return Response(
-                    {
-                        "detail": "You are not a member of this shared goal."
-                    },
+                    {"detail": "You are not a member of this shared goal."},
                     status=status.HTTP_403_FORBIDDEN,
                 )
 
             if member.role == GoalRole.VIEWER:
                 return Response(
-                    {
-                        "detail": "Viewers cannot fund this goal."
-                    },
+                    {"detail": "Viewers cannot fund this goal."},
                     status=status.HTTP_403_FORBIDDEN,
                 )
+        elif goal.owner != request.user:
+            return Response(
+                {"detail": "You do not own this goal."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
-        else:
-
-            if goal.user != request.user:  # Change to goal.owner if renamed
-                return Response(
-                    {
-                        "detail": "You do not own this goal."
-                    },
-                    status=status.HTTP_403_FORBIDDEN,
-                )
-
-        # ===========================
-        # Goal Status Checks
-        # ===========================
-
+        # Goal status checks
         if goal.status == GoalStatus.PAUSED:
             return Response(
                 {"detail": "Goal is currently paused."},
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
         if goal.status == GoalStatus.COMPLETED:
             return Response(
                 {"detail": "Goal is already completed."},
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_400_BAD_REQUEST,
             )
-
-        # ===========================
-        # Wallet Balance Check
-        # ===========================
 
         if wallet.available_balance < amount:
             return Response(
                 {"detail": "Insufficient wallet balance."},
-                status=status.HTTP_400_BAD_REQUEST
+                status=status.HTTP_400_BAD_REQUEST,
             )
 
-        balance_before = wallet.available_balance
-
         # Debit wallet
+        balance_before = wallet.available_balance
         wallet.available_balance -= amount
         wallet.save(update_fields=["available_balance"])
-
         balance_after = wallet.available_balance
 
         # Credit goal
         goal.saved_amount += amount
 
-        if goal.saved_amount >= goal.target_amount:
+        goal_completed = goal.saved_amount >= goal.target_amount
+
+        if goal_completed:
             goal.status = GoalStatus.COMPLETED
 
         goal.save()
 
         reference = generate_reference()
 
-        # Goal Funding Record
+        # Record goal funding
         GoalFunding.objects.create(
             wallet=wallet,
-            user=request.user,  # Add this field to your model
+            user=request.user,
             goal=goal,
             reference=reference,
             amount=amount,
         )
-            #Goal Share Activity
-        GoalShareActivity.objects.create(
-    goal=goal,
-    user=request.user,
-    activity_type=GoalShareActivityType.CONTRIBUTION,
-    message=f"{request.user.first_name} contributed ₦{amount}."
-)
 
-        # Wallet Transaction
+        # Record shared-goal activity
+        GoalShareActivity.objects.create(
+            goal=goal,
+            user=request.user,
+            activity_type=GoalShareActivityType.CONTRIBUTION,
+            message=(
+                f"{request.user.first_name or request.user.email} "
+                f"contributed ₦{amount:,.2f}."
+            ),
+        )
+
+        # Record wallet transaction
         WalletTransaction.objects.create(
             wallet=wallet,
             reference=reference,
@@ -532,10 +518,10 @@ def fund_goal(request, pk):
             balance_before=balance_before,
             balance_after=balance_after,
             status="SUCCESS",
-            description=f"Transferred to goal: {goal.name}"
+            description=f"Transferred to goal: {goal.name}",
         )
 
-        # Ledger Entry
+        # Record ledger entry
         LedgerEntry.objects.create(
             wallet=wallet,
             transaction_reference=reference,
@@ -544,19 +530,60 @@ def fund_goal(request, pk):
             amount=amount,
             balance_before=balance_before,
             balance_after=balance_after,
-            description=f"Transfer to savings goal: {goal.name}"
+            description=f"Transfer to savings goal: {goal.name}",
         )
 
-        invalidate_cache(
-            f"goals:{request.user.id}"
+        # In-app notification for the contributor
+        create_notification(
+            user=request.user,
+            notification_type=Notification.Type.GOAL_FUNDING,
+            title="Goal funded successfully",
+            message=(
+                f"You added ₦{amount:,.2f} to "
+                f"'{goal.name}'. Your new goal balance is "
+                f"₦{goal.saved_amount:,.2f}."
+            ),
+            data={
+                "goal_id": str(goal.pk),
+                "goal_name": goal.name,
+                "reference": reference,
+                "amount": str(amount),
+                "goal_saved_amount": str(goal.saved_amount),
+                "goal_status": goal.status,
+            },
+            event_key=f"goal-funding:{reference}",
         )
 
-        invalidate_cache(
-        f"goal:{request.user.id}:{pk}"
-    )
+        # Notify the goal owner when the goal reaches its target.
+        if goal_completed:
+            create_notification(
+                user=goal.owner,
+                notification_type=Notification.Type.GOAL_COMPLETED,
+                title="Savings goal completed!",
+                message=(
+                    f"Your goal '{goal.name}' has reached "
+                    f"its target of ₦{goal.target_amount:,.2f}."
+                ),
+                data={
+                    "goal_id": str(goal.pk),
+                    "goal_name": goal.name,
+                    "target_amount": str(goal.target_amount),
+                    "saved_amount": str(goal.saved_amount),
+                    "reference": reference,
+                },
+                event_key=f"goal-completed:{goal.pk}",
+            )
 
-    
-        # Queue the email only after the financial transaction commits.
+        # Invalidate caches only after the transaction commits.
+        transaction.on_commit(
+            lambda: (
+                invalidate_cache(f"goals:{request.user.id}"),
+                invalidate_cache(f"goal:{request.user.id}:{pk}"),
+            ),
+            robust=True,
+        )
+
+        # Queue the email after commit.
         transaction.on_commit(
             lambda: send_goal_funding_notification.delay(
                 goal_id=goal.pk,
@@ -566,7 +593,6 @@ def fund_goal(request, pk):
             ),
             robust=True,
         )
-
 
     return Response(
         {
@@ -589,9 +615,7 @@ def fund_goal(request, pk):
     summary="Invite a member to a shared goal",
     description=(
         "Allows the owner of a shared savings goal to invite another user "
-        "by email. If the email belongs to an existing user, they can later "
-        "accept the invitation. Otherwise, the invitation can be used after "
-        "registration."
+        "by email. Registered users receive an in-app notification."
     ),
     request=GoalInvitationSerializer,
     responses={
@@ -608,9 +632,12 @@ def invite_goal_member(request, pk):
     serializer = GoalInvitationSerializer(data=request.data)
 
     if not serializer.is_valid():
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            serializer.errors,
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
-    email = serializer.validated_data["email"]
+    email = serializer.validated_data["email"].strip()
 
     try:
         goal = SavingsGoal.objects.get(id=pk)
@@ -620,38 +647,39 @@ def invite_goal_member(request, pk):
             status=status.HTTP_404_NOT_FOUND,
         )
 
-    # Only owner can invite
-    if goal.owner != request.user:     
+    # Only the owner can invite members.
+    if goal.owner != request.user:
         return Response(
             {"detail": "You are not allowed to invite members to this goal."},
             status=status.HTTP_403_FORBIDDEN,
         )
 
-    # Goal must be shared
     if not goal.is_shared:
         return Response(
             {"detail": "This is not a shared goal."},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    # Already a member?
-    if User.objects.filter(email=email).exists():
-        invited_user = User.objects.get(email=email)
+    # Find an existing account, ignoring email case.
+    invited_user = User.objects.filter(
+        email__iexact=email
+    ).first()
 
-        if GoalMember.objects.filter(
-            goal=goal,
-            owner=invited_user
-        ).exists():
-            return Response(
-                {"detail": "This user is already a member of this goal."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
+    # Prevent inviting someone who is already a member.
+    if invited_user and GoalMember.objects.filter(
+        goal=goal,
+        owner=invited_user,
+    ).exists():
+        return Response(
+            {"detail": "This user is already a member of this goal."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
-    # Pending invitation already exists?
+    # Prevent duplicate pending invitations.
     if GoalInvitation.objects.filter(
         goal=goal,
-        email=email,
-        status=InvitationStatus.PENDING
+        email__iexact=email,
+        status=InvitationStatus.PENDING,
     ).exists():
         return Response(
             {"detail": "An invitation has already been sent to this email."},
@@ -665,16 +693,42 @@ def invite_goal_member(request, pk):
             invited_by=request.user,
         )
 
+        # Notify the registered user inside the transaction.
+        if invited_user:
+            create_notification(
+                user=invited_user,
+                notification_type=Notification.Type.GOAL_INVITATION,
+                title="You've been invited to a savings goal",
+                message=(
+                    f"{request.user.first_name or request.user.email} "
+                    f"invited you to join '{goal.name}'."
+                ),
+                data={
+                    "invitation_id": str(invitation.pk),
+                    "goal_id": str(goal.pk),
+                    "goal_name": goal.name,
+                    "invited_by": str(request.user.pk),
+                    "inviter_email": request.user.email,
+                },
+                event_key=f"goal-invitation:{invitation.pk}",
+            )
 
-    transaction.on_commit(
-        lambda: send_goal_invitation_email.delay(invitation.pk),
-        robust=True,
-    )
+        # Send the invitation email only after the transaction commits.
+        transaction.on_commit(
+            lambda: send_goal_invitation_email.delay(invitation.pk),
+            robust=True,
+        )
 
     return Response(
-    {"message": "Invitation created successfully. An email will be sent shortly."},
-    status=status.HTTP_201_CREATED,
-)
+        {
+            "message": (
+                "Invitation created successfully. "
+                "An email will be sent shortly."
+            ),
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
 
 
 
@@ -684,7 +738,7 @@ def invite_goal_member(request, pk):
 @extend_schema(
     tags=["Goal Members"],
     summary="Accept a goal invitation",
-    description="Allows a user to accept a pending invitation and join a shared savings goal.",
+    description="Accept a pending invitation and join a shared savings goal.",
     request=None,
     parameters=[
         OpenApiParameter(
@@ -705,92 +759,120 @@ def invite_goal_member(request, pk):
 @permission_classes([IsAuthenticated])
 @throttle_classes([MessageThrottle])
 def accept_goal_invitation(request, token):
-    try:
-        invitation = GoalInvitation.objects.select_related(
-            "goal",
-            "goal__owner",
-        ).get(
-            token=token
-        )
-
-    except GoalInvitation.DoesNotExist:
-        return Response(
-            {"detail": "Invitation not found."},
-            status=status.HTTP_404_NOT_FOUND,
-        )
-
-    if invitation.status != InvitationStatus.PENDING:
-        return Response(
-            {"detail": "This invitation is no longer valid."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    if invitation.expires_at < timezone.now():
-
-        invitation.status = InvitationStatus.EXPIRED
-        invitation.save(update_fields=["status"])
-
-        return Response(
-            {"detail": "Invitation has expired."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    if request.user.email.lower() != invitation.email.lower():
-        return Response(
-            {
-                "detail": "This invitation was sent to another email address."
-            },
-            status=status.HTTP_403_FORBIDDEN,
-        )
-
-    if GoalMember.objects.filter(
-        goal=invitation.goal,
-        owner=request.user,
-    ).exists():
-
-        return Response(
-            {"detail": "You are already a member of this goal."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
     with transaction.atomic():
+        invitation = (
+            GoalInvitation.objects.select_for_update()
+            .select_related("goal", "goal__owner", "invited_by")
+            .filter(token=token)
+            .first()
+        )
+
+        if not invitation:
+            return Response(
+                {"detail": "Invitation not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if invitation.status != InvitationStatus.PENDING:
+            return Response(
+                {"detail": "This invitation is no longer valid."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if invitation.expires_at <= timezone.now():
+            invitation.status = InvitationStatus.EXPIRED
+            invitation.save(update_fields=["status"])
+
+            return Response(
+                {"detail": "Invitation has expired."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if request.user.email.lower() != invitation.email.lower():
+            return Response(
+                {
+                    "detail": (
+                        "This invitation was sent to another email address."
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if GoalMember.objects.filter(
+            goal=invitation.goal,
+            owner=request.user,
+        ).exists():
+            return Response(
+                {"detail": "You are already a member of this goal."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         GoalMember.objects.create(
             goal=invitation.goal,
             owner=request.user,
             role=GoalRole.CONTRIBUTOR,
+            status="ACCEPTED",
         )
 
         GoalShareActivity.objects.create(
-                goal=invitation.goal,
-                user=request.user,
-                activity_type=GoalShareActivityType.MEMBER_JOINED,
-                message=f"{request.user.first_name} joined the goal."
-                
-                )
+            goal=invitation.goal,
+            user=request.user,
+            activity_type=GoalShareActivityType.MEMBER_JOINED,
+            message=(
+                f"{request.user.first_name or request.user.email} "
+                "joined the goal."
+            ),
+        )
 
         invitation.status = InvitationStatus.ACCEPTED
         invitation.save(update_fields=["status"])
 
-        invalidate_cache(
-    f"goal_members:{request.user.id}:{invitation.goal.id}"
+        # Notify the goal owner.
+        create_notification(
+            user=invitation.goal.owner,
+            notification_type=Notification.Type.GOAL_INVITATION_ACCEPTED,
+            title="Goal invitation accepted",
+            message=(
+                f"{request.user.first_name or request.user.email} "
+                f"accepted your invitation to '{invitation.goal.name}'."
+            ),
+            data={
+                "invitation_id": str(invitation.pk),
+                "goal_id": str(invitation.goal.pk),
+                "goal_name": invitation.goal.name,
+                "member_id": str(request.user.pk),
+                "member_email": request.user.email,
+            },
+            event_key=f"goal-invitation-accepted:{invitation.pk}",
+        )
+
+        transaction.on_commit(
+            lambda: invalidate_cache(
+                f"goal_members:{invitation.goal.owner_id}:{invitation.goal_id}"
+            ),
+            robust=True,
+        )
+
+        transaction.on_commit(
+            lambda: invalidate_cache(
+                f"goal_members:{request.user.pk}:{invitation.goal_id}"
+            ),
+            robust=True,
         )
 
     return Response(
-        {
-            "message": "You have successfully joined the shared goal."
-        },
+        {"message": "You have successfully joined the shared goal."},
         status=status.HTTP_200_OK,
     )
 
 
 
+#Decline Invitation
 
 @extend_schema(
     tags=["Goal Members"],
-
     summary="Decline a goal invitation",
-    description="Allows a user to decline a pending invitation to a shared savings goal.",
+    description="Decline a pending invitation to a shared savings goal.",
     request=None,
     parameters=[
         OpenApiParameter(
@@ -809,48 +891,74 @@ def accept_goal_invitation(request, token):
 )
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
+@throttle_classes([MessageThrottle])
 def decline_goal_invitation(request, token):
-    try:
-        invitation = GoalInvitation.objects.get(token=token)
-
-    except GoalInvitation.DoesNotExist:
-        return Response(
-            {"detail": "Invitation not found."},
-            status=status.HTTP_404_NOT_FOUND,
+    with transaction.atomic():
+        invitation = (
+            GoalInvitation.objects.select_for_update()
+            .select_related("goal", "goal__owner")
+            .filter(token=token)
+            .first()
         )
 
-    if invitation.status != InvitationStatus.PENDING:
-        return Response(
-            {"detail": "This invitation is no longer valid."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
+        if not invitation:
+            return Response(
+                {"detail": "Invitation not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
-    if invitation.expires_at < timezone.now():
-        invitation.status = InvitationStatus.EXPIRED
+        if invitation.status != InvitationStatus.PENDING:
+            return Response(
+                {"detail": "This invitation is no longer valid."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if invitation.expires_at <= timezone.now():
+            invitation.status = InvitationStatus.EXPIRED
+            invitation.save(update_fields=["status"])
+
+            return Response(
+                {"detail": "Invitation has expired."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if request.user.email.lower() != invitation.email.lower():
+            return Response(
+                {
+                    "detail": (
+                        "This invitation was sent to another email address."
+                    )
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        invitation.status = InvitationStatus.DECLINED
         invitation.save(update_fields=["status"])
 
-        return Response(
-            {"detail": "Invitation has expired."},
-            status=status.HTTP_400_BAD_REQUEST,
-        )
-
-    if request.user.email.lower() != invitation.email.lower():
-        return Response(
-            {
-                "detail": "This invitation was sent to another email address."
+        # Notify the goal owner.
+        create_notification(
+            user=invitation.goal.owner,
+            notification_type=Notification.Type.GOAL_INVITATION_DECLINED,
+            title="Goal invitation declined",
+            message=(
+                f"{request.user.first_name or request.user.email} "
+                f"declined your invitation to '{invitation.goal.name}'."
+            ),
+            data={
+                "invitation_id": str(invitation.pk),
+                "goal_id": str(invitation.goal.pk),
+                "goal_name": invitation.goal.name,
+                "member_email": request.user.email,
             },
-            status=status.HTTP_403_FORBIDDEN,
+            event_key=f"goal-invitation-declined:{invitation.pk}",
         )
-
-    invitation.status = InvitationStatus.DECLINED
-    invitation.save(update_fields=["status"])
 
     return Response(
-        {
-            "message": "Invitation declined successfully."
-        },
+        {"message": "Invitation declined successfully."},
         status=status.HTTP_200_OK,
     )
+
+    
 
 
 
